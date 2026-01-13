@@ -597,7 +597,22 @@ def register_default_jobs(scheduler) -> None:
             max_instances=1,
             coalesce=True
         )
+        )
         logger.info("Registered job: performance_metrics_populate (daily at 5 PM EST)")
+
+    # Scheduler Heartbeat - Updates file timestamp every 20s to detect crashes
+    # This is critical for the entrypoint/Streamlit/Flask coordination
+    from scheduler.scheduler_core import _update_heartbeat
+    scheduler.add_job(
+        _update_heartbeat,
+        trigger=IntervalTrigger(seconds=20),
+        id='scheduler_heartbeat',
+        name='Scheduler Heartbeat',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True
+    )
+    logger.info("Registered job: scheduler_heartbeat (every 20s)")
     
     # Portfolio price update job - during market hours only (weekdays 9:30 AM - 4:00 PM EST)
     # NOTE: Exchange rates are NOT required for this job - positions are stored in native currency

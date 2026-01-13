@@ -357,13 +357,30 @@ def get_navigation_context(current_page: str = None) -> Dict[str, Any]:
                     selected_fund = available_funds[0]
                 else:
                     selected_fund = ""
+        
+        # Get scheduler status globally for the menu badge
+        scheduler_status = 'stopped'
+        try:
+            from scheduler.scheduler_core import is_scheduler_running
+            if is_scheduler_running():
+                scheduler_status = 'running'
+        except Exception:
+            # Check if we can get status from admin utility as fallback
+            try:
+                from admin_utils import get_scheduler_status_cached
+                status = get_scheduler_status_cached()
+                if status and status.get('running'):
+                    scheduler_status = 'running'
+            except Exception:
+                pass
             
         return {
             'navigation_links': nav_links,
             'is_admin': is_admin_value,
             'available_funds': available_funds,
             'selected_fund': selected_fund,
-            'allow_all_funds': allow_all_funds
+            'allow_all_funds': allow_all_funds,
+            'scheduler_status': scheduler_status
         }
     except Exception as e:
         logger.warning(f"Error building navigation context: {e}")

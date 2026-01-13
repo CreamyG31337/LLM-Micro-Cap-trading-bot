@@ -117,14 +117,7 @@ def _init_scheduler():
         return False
 
 
-# Auto-start scheduler on module load (not waiting for page render)
-# This ensures scheduled jobs run even if no one visits the Streamlit app
-try:
-    _logger.info("Initializing scheduler on Streamlit module load...")
-    _init_scheduler()
-except Exception as e:
-    _logger.error(f"Failed to initialize scheduler on module load: {e}", exc_info=True)
-    # Continue - scheduler can be started manually via UI
+
 
 
 def _check_postgres_connection():
@@ -1331,6 +1324,15 @@ def main():
              st.stop()
     except Exception as e:
         _logger.warning(f"V2 redirect check failed: {e}")
+
+    # Initialize scheduler (after V2 redirect check)
+    # This prevents blocking the redirect if scheduler takes time to start
+    try:
+        _logger.info("Initializing scheduler (post-redirect check)...")
+        _init_scheduler()
+    except Exception as e:
+        _logger.error(f"Failed to initialize scheduler: {e}", exc_info=True)
+
 
     # Sidebar - Navigation and Filters
     from navigation import render_navigation

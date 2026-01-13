@@ -50,6 +50,24 @@
                 {
                 % endif %
             }
+
+        /* Sidebar collapse transitions */
+        .sidebar-text {
+            transition: opacity 0.3s ease-in-out, max-width 0.3s ease-in-out;
+            display: inline-block;
+        }
+
+        .sidebar-content {
+            transition: opacity 0.3s ease-in-out, max-height 0.3s ease-in-out;
+        }
+
+        .sidebar-select {
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .sidebar-badge {
+            transition: opacity 0.3s ease-in-out;
+        }
     </style>
 
     <!-- Theme Management Scripts -->
@@ -114,13 +132,24 @@
     </header>
 
     <div class="flex">
-        <!-- Sidebar Navigation - Simple approach: hidden on mobile, visible on desktop -->
+        <!-- Sidebar Navigation - Collapsible with smooth transitions -->
+        <!-- Mobile: Flowbite drawer (hidden by default, toggled via hamburger) -->
+        <!-- Desktop: Collapsible sidebar (visible, can be collapsed) -->
         <aside id="sidebar"
-            class="hidden md:block fixed top-0 left-0 z-40 w-64 h-screen bg-white border-r border-gray-200 shadow-sm"
-            aria-label="Sidebar">
-            <div class="h-full px-3 pb-4 pt-24 overflow-y-auto bg-white">
-                <div class="mb-4 mt-2">
-                    <h2 class="text-lg font-bold text-gray-900 px-2">Navigation</h2>
+            class="fixed top-0 left-0 z-40 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shadow-sm transition-all duration-300 ease-in-out transform -translate-x-full md:translate-x-0"
+            aria-label="Sidebar"
+            tabindex="-1"
+            aria-labelledby="sidebar-label">
+            <!-- Toggle Button (visible on desktop) -->
+            <button id="sidebar-collapse-toggle"
+                class="hidden md:flex absolute top-20 right-0 z-50 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-l-lg shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-300 items-center justify-center"
+                aria-label="Toggle sidebar">
+                <i id="sidebar-toggle-icon" class="fas fa-chevron-left text-gray-600 dark:text-gray-300 transition-transform duration-300"></i>
+            </button>
+
+            <div class="h-full px-3 pb-4 pt-24 overflow-y-auto bg-white dark:bg-gray-800 transition-all duration-300">
+                <div class="mb-4 mt-2 sidebar-content">
+                    <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2 whitespace-nowrap overflow-hidden sidebar-text">Navigation</h2>
                 </div>
 
                 <!-- Navigation links -->
@@ -128,18 +157,18 @@
                     {% if navigation_links %}
                     <li>
                         <a href="{{ url_for('dashboard.dashboard_page') }}"
-                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 {% if current_page == 'dashboard' %}bg-gray-100 text-blue-700{% endif %}">
-                            <span class="mr-3 text-lg">📈</span>
-                            <span>Dashboard</span>
+                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'dashboard' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                            <span class="mr-3 text-lg flex-shrink-0">📈</span>
+                            <span class="sidebar-text whitespace-nowrap overflow-hidden">Dashboard</span>
                         </a>
                     </li>
                     {% for link in navigation_links %}
                     {% if link.show %}
                     <li>
                         <a href="{{ link.url }}"
-                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 {% if link.active %}bg-blue-50 text-blue-700{% endif %}">
-                            <span class="mr-3 text-lg">{{ link.icon }}</span>
-                            <span>{{ link.name }}</span>
+                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if link.active %}bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-400{% endif %}">
+                            <span class="mr-3 text-lg flex-shrink-0">{{ link.icon }}</span>
+                            <span class="sidebar-text whitespace-nowrap overflow-hidden">{{ link.name }}</span>
                         </a>
                     </li>
                     {% endif %}
@@ -147,24 +176,24 @@
                     {% else %}
                     <li>
                         <a href="/"
-                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100">
-                            <span class="mr-3 text-lg">📈</span>
-                            <span>Dashboard</span>
+                            class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <span class="mr-3 text-lg flex-shrink-0">📈</span>
+                            <span class="sidebar-text whitespace-nowrap overflow-hidden">Dashboard</span>
                         </a>
                     </li>
                     {% endif %}
                 </ul>
 
                 <!-- Fund Selector (like Streamlit sidebar) -->
-                <div class="mt-6 pt-4 border-t border-gray-200">
+                <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 sidebar-content">
                     <div class="px-3 mb-2">
-                        <label for="global-fund-select" class="text-xs font-semibold text-gray-500 uppercase">
+                        <label for="global-fund-select" class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase whitespace-nowrap overflow-hidden sidebar-text">
                             📊 Data Source
                         </label>
                     </div>
                     <div class="px-2">
                         <select id="global-fund-select"
-                            class="w-full p-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            class="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sidebar-select">
                             {% if allow_all_funds is not defined or allow_all_funds %}
                             <option value="all" {% if not selected_fund or selected_fund=='all' %}selected{% endif %}>
                                 All Funds</option>
@@ -184,72 +213,72 @@
 
                 <!-- Admin section (if admin) -->
                 {% if is_admin|default(false) %}
-                <div class="mt-6 pt-6 border-t border-gray-200">
+                <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 sidebar-content">
                     <div class="px-3 mb-2">
-                        <span class="text-xs font-semibold text-gray-500 uppercase">Admin</span>
+                        <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase whitespace-nowrap overflow-hidden sidebar-text">Admin</span>
                     </div>
                     <ul class="space-y-1">
                         <li>
                             <a href="{{ url_for('admin.scheduler_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_scheduler' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">🔨</span>
-                                <span class="flex-1 whitespace-nowrap">Jobs Scheduler</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_scheduler' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">🔨</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">Jobs Scheduler</span>
                                 {% if scheduler_status == 'running' %}
                                 <span
-                                    class="inline-flex items-center justify-center w-3 h-3 p-3 ms-3 text-sm font-medium text-green-800 bg-green-100 rounded-full dark:bg-green-900 dark:text-green-300">Run</span>
+                                    class="inline-flex items-center justify-center w-3 h-3 p-3 ms-3 text-sm font-medium text-green-800 bg-green-100 rounded-full dark:bg-green-900 dark:text-green-300 sidebar-badge">Run</span>
                                 {% else %}
                                 <span
-                                    class="inline-flex items-center justify-center w-3 h-3 p-3 ms-3 text-sm font-medium text-red-800 bg-red-100 rounded-full dark:bg-red-900 dark:text-red-300">Stop</span>
+                                    class="inline-flex items-center justify-center w-3 h-3 p-3 ms-3 text-sm font-medium text-red-800 bg-red-100 rounded-full dark:bg-red-900 dark:text-red-300 sidebar-badge">Stop</span>
                                 {% endif %}
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.users_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_users' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">👥</span>
-                                <span class="flex-1 whitespace-nowrap">User Management</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_users' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">👥</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">User Management</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('fund_routes.admin_funds_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_funds' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">🏦</span>
-                                <span class="flex-1 whitespace-nowrap">Fund Management</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_funds' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">🏦</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">Fund Management</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.trade_entry_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_trade_entry' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">📈</span>
-                                <span class="flex-1 whitespace-nowrap">Trade Entry</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_trade_entry' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">📈</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">Trade Entry</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.contributions_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_contributions' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">💰</span>
-                                <span class="flex-1 whitespace-nowrap">Contributions</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_contributions' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">💰</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">Contributions</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.ai_settings_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_ai_settings' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">🤖</span>
-                                <span class="flex-1 whitespace-nowrap">AI Settings</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_ai_settings' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">🤖</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">AI Settings</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.system_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_system' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">🖥️</span>
-                                <span class="flex-1 whitespace-nowrap">System Monitor</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_system' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">🖥️</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">System Monitor</span>
                             </a>
                         </li>
                         <li>
                             <a href="{{ url_for('admin.logs_page') }}"
-                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700 {% if current_page == 'admin_logs' %}bg-gray-100 text-blue-700 dark:bg-gray-700{% endif %}">
-                                <span class="mr-3 text-lg">📜</span>
-                                <span class="flex-1 whitespace-nowrap">Logs</span>
+                                class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 {% if current_page == 'admin_logs' %}bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-400{% endif %}">
+                                <span class="mr-3 text-lg flex-shrink-0">📜</span>
+                                <span class="sidebar-text flex-1 whitespace-nowrap overflow-hidden">Logs</span>
                             </a>
                         </li>
                     </ul>
@@ -260,7 +289,7 @@
 
 
         <!-- Main content area -->
-        <main class="flex-1 md:ml-64 min-h-screen">
+        <main id="main-content" class="flex-1 min-h-screen transition-all duration-300 ease-in-out">
             <div class="w-full px-4 py-6 md:py-8">
                 {% block content %}{% endblock %}
             </div>
@@ -277,21 +306,204 @@
     <!-- Flowbite JavaScript (required for interactive components) -->
     <script src="https://cdn.jsdelivr.net/npm/flowbite@2.5.2/dist/flowbite.min.js"></script>
 
-    <!-- Fix: Remove aria-hidden from sidebar on desktop to prevent accessibility warning -->
+    <!-- Sidebar Collapse Script with Mobile Detection -->
     <script>
-        (function () {
-            function fixSidebarAriaHidden() {
-                const sidebar = document.getElementById('sidebar');
-                if (sidebar && window.innerWidth >= 768) {
-                    // On desktop, sidebar is visible - remove aria-hidden
-                    sidebar.removeAttribute('aria-hidden');
+        (function() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('main-content');
+            const toggleButton = document.getElementById('sidebar-collapse-toggle');
+            const toggleIcon = document.getElementById('sidebar-toggle-icon');
+            const sidebarTexts = document.querySelectorAll('.sidebar-text');
+            const sidebarContents = document.querySelectorAll('.sidebar-content');
+            const sidebarSelect = document.getElementById('global-fund-select');
+            const sidebarBadges = document.querySelectorAll('.sidebar-badge');
+            
+            const SIDEBAR_EXPANDED_WIDTH = 256; // w-64 = 16rem = 256px
+            const SIDEBAR_COLLAPSED_WIDTH = 64;  // w-16 = 4rem = 64px
+            const MOBILE_BREAKPOINT = 768; // md breakpoint in Tailwind
+            const NARROW_SCREEN_THRESHOLD = 1024; // Collapse by default on screens narrower than this
+            
+            // Detect if screen is narrow (mobile or tablet)
+            function isNarrowScreen() {
+                return window.innerWidth < NARROW_SCREEN_THRESHOLD;
+            }
+            
+            // Detect if we're on mobile (use Flowbite drawer)
+            function isMobile() {
+                return window.innerWidth < MOBILE_BREAKPOINT;
+            }
+            
+            function collapseSidebar() {
+                sidebar.style.width = SIDEBAR_COLLAPSED_WIDTH + 'px';
+                sidebar.setAttribute('data-sidebar-collapsed', 'true');
+                if (!isMobile()) {
+                    mainContent.style.marginLeft = SIDEBAR_COLLAPSED_WIDTH + 'px';
+                }
+                
+                // Hide text and content with smooth transition
+                sidebarTexts.forEach(el => {
+                    el.style.opacity = '0';
+                    el.style.maxWidth = '0';
+                    el.style.overflow = 'hidden';
+                });
+                sidebarContents.forEach(el => {
+                    el.style.opacity = '0';
+                    el.style.maxHeight = '0';
+                    el.style.overflow = 'hidden';
+                });
+                if (sidebarSelect) {
+                    sidebarSelect.style.opacity = '0';
+                    sidebarSelect.style.pointerEvents = 'none';
+                }
+                sidebarBadges.forEach(el => {
+                    el.style.opacity = '0';
+                });
+                
+                // Rotate icon
+                if (toggleIcon) {
+                    toggleIcon.classList.remove('fa-chevron-left');
+                    toggleIcon.classList.add('fa-chevron-right');
+                }
+                
+                // Save state (only on desktop)
+                if (!isMobile()) {
+                    localStorage.setItem('sidebarCollapsed', 'true');
                 }
             }
-            // Run on page load and resize
-            document.addEventListener('DOMContentLoaded', fixSidebarAriaHidden);
-            window.addEventListener('resize', fixSidebarAriaHidden);
-            // Also run after Flowbite initializes (slight delay)
-            setTimeout(fixSidebarAriaHidden, 100);
+            
+            function expandSidebar() {
+                sidebar.style.width = SIDEBAR_EXPANDED_WIDTH + 'px';
+                sidebar.setAttribute('data-sidebar-collapsed', 'false');
+                if (!isMobile()) {
+                    mainContent.style.marginLeft = SIDEBAR_EXPANDED_WIDTH + 'px';
+                }
+                
+                // Show text and content with smooth transition
+                sidebarTexts.forEach(el => {
+                    el.style.opacity = '1';
+                    el.style.maxWidth = 'none';
+                    el.style.overflow = 'visible';
+                });
+                sidebarContents.forEach(el => {
+                    el.style.opacity = '1';
+                    el.style.maxHeight = 'none';
+                    el.style.overflow = 'visible';
+                });
+                if (sidebarSelect) {
+                    sidebarSelect.style.opacity = '1';
+                    sidebarSelect.style.pointerEvents = 'auto';
+                }
+                sidebarBadges.forEach(el => {
+                    el.style.opacity = '1';
+                });
+                
+                // Rotate icon
+                if (toggleIcon) {
+                    toggleIcon.classList.remove('fa-chevron-right');
+                    toggleIcon.classList.add('fa-chevron-left');
+                }
+                
+                // Save state (only on desktop)
+                if (!isMobile()) {
+                    localStorage.setItem('sidebarCollapsed', 'false');
+                }
+            }
+            
+            function toggleSidebar() {
+                const currentWidth = sidebar.offsetWidth;
+                const isCurrentlyCollapsed = currentWidth <= SIDEBAR_COLLAPSED_WIDTH + 10; // 10px tolerance
+                
+                if (isCurrentlyCollapsed) {
+                    expandSidebar();
+                } else {
+                    collapseSidebar();
+                }
+            }
+            
+            // Initialize sidebar on page load
+            function initSidebar() {
+                if (isMobile()) {
+                    // Mobile: Let Flowbite drawer handle it completely
+                    // Reset any desktop styles that might interfere
+                    sidebar.style.width = '';
+                    sidebar.style.marginLeft = '';
+                    mainContent.style.marginLeft = '0';
+                    // Flowbite's CSS classes (-translate-x-full md:translate-x-0) handle visibility
+                    // Don't interfere with Flowbite's drawer behavior
+                } else {
+                    // Desktop: Tailwind's md:translate-x-0 makes it visible
+                    // Now apply our collapsible state
+                    
+                    // Check if we should collapse by default (narrow screen)
+                    const shouldCollapseByDefault = isNarrowScreen();
+                    const savedState = localStorage.getItem('sidebarCollapsed');
+                    
+                    // On narrow screens, collapse by default unless user explicitly expanded
+                    // On wide screens, use saved preference or default to expanded
+                    if (shouldCollapseByDefault && savedState !== 'false') {
+                        // Narrow screen: collapse by default
+                        collapseSidebar();
+                    } else if (savedState === 'true') {
+                        // User preference: collapsed
+                        collapseSidebar();
+                    } else {
+                        // Default or user preference: expanded
+                        expandSidebar();
+                    }
+                }
+            }
+            
+            // Handle window resize
+            function handleResize() {
+                if (isMobile()) {
+                    // Mobile: Reset to Flowbite drawer behavior
+                    sidebar.style.width = '';
+                    sidebar.style.marginLeft = '';
+                    mainContent.style.marginLeft = '0';
+                    // Tailwind classes handle visibility (-translate-x-full md:translate-x-0)
+                } else {
+                    // Desktop: Tailwind makes it visible, restore our collapsible state
+                    const isCollapsed = sidebar.getAttribute('data-sidebar-collapsed') === 'true';
+                    if (isCollapsed) {
+                        collapseSidebar();
+                    } else {
+                        expandSidebar();
+                    }
+                }
+            }
+            
+            // Event listeners
+            if (toggleButton) {
+                toggleButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Initialize on DOM ready
+            function runInit() {
+                // Wait a bit for Flowbite to initialize
+                setTimeout(initSidebar, 100);
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', runInit);
+            } else {
+                runInit();
+            }
+            
+            // Handle window resize with debounce
+            let resizeTimeout;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(handleResize, 150);
+            });
+            
+            // Also handle orientation change on mobile
+            window.addEventListener('orientationchange', function() {
+                setTimeout(handleResize, 200);
+            });
         })();
     </script>
 

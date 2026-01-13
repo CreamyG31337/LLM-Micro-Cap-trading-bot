@@ -41,9 +41,31 @@ def main():
     logger.info("Starting Trading Dashboard with Background Tasks")
     logger.info("=" * 50)
     
-    # NOTE: Scheduler is initialized inside streamlit_app.py via @st.cache_resource
-    # This ensures it runs in the same process as Streamlit (subprocess.run creates a new process)
-    logger.info("ℹ️ Scheduler will be initialized by Streamlit on first request")
+    # Start scheduler in a separate thread within this process
+    # This keeps it independent of Streamlit's reloads but within the same container
+    try:
+        import threading
+        import time
+        from scheduler.scheduler_core import start_scheduler
+        
+        def _run_scheduler():
+            logger.info("🚀 Starting scheduler from entrypoint...")
+            # Wait a bit for imports to settle
+            time.sleep(2)
+            try:
+                start_scheduler()
+                logger.info("✅ Scheduler started successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to start scheduler: {e}")
+
+        scheduler_thread = threading.Thread(target=_run_scheduler, daemon=True)
+        scheduler_thread.start()
+        logger.info("ℹ️ Scheduler thread initiated")
+        
+    except ImportError:
+        logger.warning("⚠️ Could not import scheduler modules - skipping auto-start")
+    except Exception as e:
+        logger.error(f"❌ Error initializing scheduler: {e}")
     
     # Launch Streamlit
     logger.info("Launching Streamlit application...")

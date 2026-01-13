@@ -1199,15 +1199,21 @@ function renderSectorChart(data: AllocationChartData): void {
 
     // Update layout height to match container and ensure centered margins
     const layout = { ...data.layout };
-    layout.height = 700; // Match container height (same as performance chart)
+    
+    // Get actual container height or use default
+    const containerHeight = chartEl.offsetHeight || 700;
+    layout.height = containerHeight;
     layout.autosize = true;
-    // Ensure equal margins for centering (override any backend margins if needed)
+    
+    // Ensure proper margins - increase bottom margin for legend
     if (!layout.margin) {
-        layout.margin = { l: 20, r: 20, t: 50, b: 20 };
+        layout.margin = { l: 20, r: 20, t: 50, b: 100 };
     } else {
         // Ensure left and right margins are equal for centering
         layout.margin.l = Math.max(20, layout.margin.l || 20);
         layout.margin.r = Math.max(20, layout.margin.r || 20);
+        // Increase bottom margin to prevent legend cutoff
+        layout.margin.b = Math.max(100, layout.margin.b || 100);
     }
 
     try {
@@ -1217,6 +1223,19 @@ function renderSectorChart(data: AllocationChartData): void {
             modeBarButtonsToRemove: ['pan2d', 'lasso2d']
         });
         console.log('[Dashboard] Sector chart rendered with Plotly');
+        
+        // Add resize handler to redraw chart when window resizes (only once)
+        if (!(window as any).__sectorChartResizeHandler) {
+            const resizeHandler = () => {
+                const Plotly = (window as any).Plotly;
+                if (Plotly && document.getElementById('sector-chart')) {
+                    Plotly.Plots.resize('sector-chart');
+                }
+            };
+            (window as any).__sectorChartResizeHandler = resizeHandler;
+            window.addEventListener('resize', resizeHandler);
+        }
+        
     } catch (error) {
         console.error('[Dashboard] Error rendering Plotly sector chart:', error);
         chartEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error rendering chart</p></div>';

@@ -524,8 +524,11 @@ def get_allocation_charts():
         # Pass display_currency to ensure all values are converted before aggregation
         fig = create_sector_allocation_chart(positions_df, fund_name=fund, display_currency=display_currency)
         
-        # Update height to match container (same as performance chart)
-        fig.update_layout(height=500)
+        # Update height to match container (700px) and increase bottom margin for legend
+        fig.update_layout(
+            height=700,
+            margin=dict(l=20, r=20, t=50, b=100)  # Increased bottom margin for legend
+        )
         
         # Apply theme to chart (similar to ticker chart)
         if not client_theme or client_theme not in ['dark', 'light', 'midnight-tokyo', 'abyss']:

@@ -19,6 +19,11 @@
 #                          Format: postgresql://user:password@host:port/database
 #                          For Docker container connecting to host Postgres: use host.docker.internal
 #                          Example: postgresql://postgres:password@host.docker.internal:5432/trading_db
+# - supabase_database_url: (required) Direct PostgreSQL connection string for Supabase database
+#                          Used by APScheduler's SQLAlchemyJobStore for persistent job storage
+#                          Format: postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
+#                          Get from: Supabase Dashboard -> Settings -> Database -> Connection string (Direct connection)
+#                          Example: postgresql://postgres.abc123:YOUR-PASSWORD@db.abc123.supabase.co:5432/postgres
 # - fmp_api_key: (optional) Financial Modeling Prep API key for congress trading module
 #                Get from: https://site.financialmodelingprep.com/developer/docs/
 #                Required for congress_trades scheduled job
@@ -57,6 +62,8 @@ steps:
         from_secret: app_domain
       RESEARCH_DATABASE_URL:
         from_secret: research_database_url
+      SUPABASE_DATABASE_URL:
+        from_secret: supabase_database_url
       FMP_API_KEY:
         from_secret: fmp_api_key
       WEBAI_COOKIES_JSON:
@@ -265,9 +272,9 @@ steps:
       
       # Verify secrets are set
       - |
-        if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
+        if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ] || [ -z "$SUPABASE_SECRET_KEY" ] || [ -z "$SUPABASE_DATABASE_URL" ]; then
           echo "❌ ERROR: Missing required secrets"
-          echo "Make sure supabase_url, supabase_publishable_key, and supabase_secret_key are set in Woodpecker"
+          echo "Make sure supabase_url, supabase_publishable_key, supabase_secret_key, and supabase_database_url are set in Woodpecker"
           exit 1
         fi
       
@@ -296,6 +303,7 @@ steps:
         
         # Add optional environment variables if set
         [ -n "$RESEARCH_DATABASE_URL" ] && DOCKER_CMD="$DOCKER_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""
+        [ -n "$SUPABASE_DATABASE_URL" ] && DOCKER_CMD="$DOCKER_CMD -e SUPABASE_DATABASE_URL=\"$SUPABASE_DATABASE_URL\""
         [ -n "$FMP_API_KEY" ] && DOCKER_CMD="$DOCKER_CMD -e FMP_API_KEY=\"$FMP_API_KEY\""
         
         # Add WebAI cookies as environment variable (fallback if shared volume file not available)
@@ -347,6 +355,7 @@ steps:
         
         # Add optional environment variables if set
         [ -n "$RESEARCH_DATABASE_URL" ] && FLASK_CMD="$FLASK_CMD -e RESEARCH_DATABASE_URL=\"$RESEARCH_DATABASE_URL\""
+        [ -n "$SUPABASE_DATABASE_URL" ] && FLASK_CMD="$FLASK_CMD -e SUPABASE_DATABASE_URL=\"$SUPABASE_DATABASE_URL\""
         [ -n "$FMP_API_KEY" ] && FLASK_CMD="$FLASK_CMD -e FMP_API_KEY=\"$FMP_API_KEY\""
         
         # Add WebAI cookies (same as Streamlit container)

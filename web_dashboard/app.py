@@ -415,6 +415,30 @@ try:
 except Exception as e:
     logger.error(f"Failed to register Admin Blueprint: {e}", exc_info=True)
 
+# Auto-start scheduler on Flask startup
+# NOTE: @app.before_first_request is deprecated in Flask 2.2+ but still works
+# For production with gunicorn, consider using a startup script instead
+@app.before_first_request
+def start_scheduler_on_startup():
+    """Start the scheduler when Flask app starts (first request)."""
+    try:
+        from scheduler.scheduler_core import start_scheduler, is_scheduler_running
+        
+        # Only start if not already running (check heartbeat to avoid duplicate starts)
+        if not is_scheduler_running():
+            logger.info("🚀 Auto-starting scheduler on Flask startup...")
+            result = start_scheduler()
+            if result:
+                logger.info("✅ Scheduler started successfully on Flask startup")
+            else:
+                logger.info("ℹ️ Scheduler was already running or failed to start")
+        else:
+            logger.debug("ℹ️ Scheduler already running, skipping auto-start")
+    except Exception as e:
+        # Don't crash Flask if scheduler fails to start
+        logger.error(f"❌ Failed to auto-start scheduler: {e}", exc_info=True)
+        logger.warning("⚠️ Flask will continue without scheduler - start manually via jobs page")
+
 def load_portfolio_data(fund_name=None) -> Dict:
     """Load and process portfolio data from Supabase (web app only - no CSV fallback)"""
     if not REPOSITORY_AVAILABLE:

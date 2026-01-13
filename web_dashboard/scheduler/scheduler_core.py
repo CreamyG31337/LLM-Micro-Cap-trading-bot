@@ -68,6 +68,11 @@ _HEARTBEAT_FILE = Path(__file__).parent.parent / 'logs' / '.scheduler_heartbeat'
 _HEARTBEAT_INTERVAL = 20  # seconds between heartbeat updates
 _HEARTBEAT_TIMEOUT = 60  # seconds before considering scheduler dead
 
+# Lock file to prevent multiple processes from starting scheduler simultaneously
+# This ensures only one scheduler instance runs across Flask and Streamlit
+_LOCK_FILE = Path(__file__).parent.parent / 'logs' / '.scheduler_lock'
+_LOCK_TIMEOUT = 10  # seconds to wait for lock file to be released
+
 # Worker Utilization Tracking
 _active_job_count = 0
 _active_job_lock = threading.Lock()
@@ -108,6 +113,73 @@ def _check_heartbeat() -> bool:
             return False
         last_beat = float(_HEARTBEAT_FILE.read_text().strip())
         return (time.time() - last_beat) < _HEARTBEAT_TIMEOUT
+    except Exception:
+        return False
+
+
+def _acquire_startup_lock() -> bool:
+    """Acquire a cross-process lock to prevent multiple processes from starting scheduler.
+    
+    Returns True if lock acquired successfully, False if another process has the lock.
+    """
+    try:
+        _LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Check if lock file exists and is recent (another process is starting)
+        if _LOCK_FILE.exists():
+            try:
+                lock_time = float(_LOCK_FILE.read_text().strip())
+                age = time.time() - lock_time
+                if age < _LOCK_TIMEOUT:
+                    # Lock is recent - another process is starting
+                    logger.debug(f"  → Another process has startup lock (age: {age:.1f}s)")
+                    return False
+                else:
+                    # Lock is stale - remove it
+                    logger.debug(f"  → Removing stale lock file (age: {age:.1f}s)")
+                    _LOCK_FILE.unlink()
+            except (ValueError, OSError):
+                # Lock file is corrupted or unreadable - remove it
+                logger.debug("  → Removing corrupted lock file")
+                try:
+                    _LOCK_FILE.unlink()
+                except OSError:
+                    pass
+        
+        # Create lock file with current timestamp and PID
+        pid = os.getpid() if hasattr(os, 'getpid') else 0
+        _LOCK_FILE.write_text(f"{time.time()}\n{pid}")
+        logger.debug(f"  → Acquired startup lock (PID: {pid})")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"  ⚠️ Failed to acquire startup lock: {e}")
+        # If we can't create lock file, allow startup to proceed (graceful degradation)
+        return True
+
+
+def _release_startup_lock() -> None:
+    """Release the cross-process startup lock."""
+    try:
+        if _LOCK_FILE.exists():
+            _LOCK_FILE.unlink()
+            logger.debug("  → Released startup lock")
+    except Exception as e:
+        logger.debug(f"  → Failed to release startup lock: {e}")
+
+
+def _check_if_another_process_starting() -> bool:
+    """Check if another process is currently starting the scheduler.
+    
+    Returns True if another process has the lock and it's recent.
+    """
+    try:
+        if not _LOCK_FILE.exists():
+            return False
+        
+        lock_time = float(_LOCK_FILE.read_text().strip().split('\n')[0])
+        age = time.time() - lock_time
+        return age < _LOCK_TIMEOUT
     except Exception:
         return False
 
@@ -612,141 +684,169 @@ def start_scheduler() -> bool:
     except Exception as e:
         logger.error(f"  ❌ Failed to setup extended logging: {e}")
 
-    # PHASE 1: Check if already running (quick lock)
-    logger.debug("[PHASE 1] Checking if scheduler is already running...")
+    # PHASE 1: Check if already running (in-process check)
+    logger.debug("[PHASE 1] Checking if scheduler is already running (in-process)...")
     with _scheduler_lock:
         scheduler = get_scheduler()
         if scheduler.running:
-            logger.info("  → Scheduler already running, returning False")
+            logger.info("  → Scheduler already running in this process, returning False")
             return False
-        logger.debug("  → Scheduler not running, proceeding with startup")
+        logger.debug("  → Scheduler not running in this process")
     
-    # PHASE 2: Cleanup stale jobs OUTSIDE lock (DB operation, may be slow)
-    logger.debug("[PHASE 2] Cleaning up stale running jobs (outside lock)...")
+    # PHASE 1.5: Check if another process has scheduler running (cross-process check)
+    logger.debug("[PHASE 1.5] Checking if another process has scheduler running...")
+    if _check_heartbeat():
+        logger.info("  → Another process has scheduler running (heartbeat detected), returning False")
+        return False
+    
+    # PHASE 1.6: Check if another process is currently starting scheduler
+    if _check_if_another_process_starting():
+        logger.info("  → Another process is starting scheduler (lock detected), returning False")
+        return False
+    
+    # PHASE 1.7: Acquire cross-process startup lock
+    logger.debug("[PHASE 1.7] Acquiring cross-process startup lock...")
+    if not _acquire_startup_lock():
+        logger.info("  → Failed to acquire startup lock (another process is starting), returning False")
+        return False
+    
+    # Use try/finally to ensure lock is always released
     try:
-        cleanup_stale_running_jobs()
-        logger.debug(f"  → Cleanup completed in {time.time() - start_time:.2f}s")
-    except Exception as e:
-        logger.error(f"  ❌ Cleanup failed (non-fatal): {e}")
-        # Continue - cleanup failure shouldn't prevent scheduler start
-    
-    # PHASE 3: Start scheduler under lock (critical section)
-    logger.debug("[PHASE 3] Starting scheduler (in lock)...")
-    phase3_start = time.time()
-    
-    with _scheduler_lock:
-        # Double-check no one else started it while we were cleaning up
-        if scheduler.running:
-            logger.info("  → Scheduler was started by another thread, returning False")
+        # Double-check heartbeat after acquiring lock (another process might have started)
+        if _check_heartbeat():
+            logger.info("  → Another process started scheduler while we were acquiring lock, returning False")
             return False
         
-        # Register default jobs (defensive import)
+        # PHASE 2: Cleanup stale jobs OUTSIDE lock (DB operation, may be slow)
+        logger.debug("[PHASE 2] Cleaning up stale running jobs (outside lock)...")
         try:
-            from scheduler.jobs import register_default_jobs
+            cleanup_stale_running_jobs()
+            logger.debug(f"  → Cleanup completed in {time.time() - start_time:.2f}s")
+        except Exception as e:
+            logger.error(f"  ❌ Cleanup failed (non-fatal): {e}")
+            # Continue - cleanup failure shouldn't prevent scheduler start
+        
+        # PHASE 3: Start scheduler under lock (critical section)
+        logger.debug("[PHASE 3] Starting scheduler (in lock)...")
+        phase3_start = time.time()
+        
+        with _scheduler_lock:
+            # Triple-check no one else started it while we were cleaning up
+            if scheduler.running:
+                logger.info("  → Scheduler was started by another thread, returning False")
+                return False
+            
+            # Register default jobs (defensive import)
+            try:
+                from scheduler.jobs import register_default_jobs
+            except ModuleNotFoundError:
+                if str(project_root) not in sys.path:
+                    sys.path.insert(0, str(project_root))
+                from scheduler.jobs import register_default_jobs
+            
+            logger.debug("  → Registering default jobs...")
+            register_default_jobs(scheduler)
+            
+            # Start scheduler
+            try:
+                scheduler.start()
+                logger.debug("  → scheduler.start() called")
+            except Exception as e:
+                logger.error(f"  ❌ Failed to start scheduler: {e}", exc_info=True)
+                raise
+            
+            # Verify scheduler actually started (APScheduler.start() is async)
+            max_wait = 2.0
+            wait_interval = 0.1
+            waited = 0.0
+            while not scheduler.running and waited < max_wait:
+                time.sleep(wait_interval)
+                waited += wait_interval
+            
+            if not scheduler.running:
+                logger.error("  ❌ Scheduler not running after start()")
+                raise RuntimeError("Scheduler failed to start - not running after start() call")
+            
+            logger.debug(f"  ✅ Scheduler running (verified in {waited:.2f}s)")
+        
+        logger.debug(f"  → Phase 3 completed in {time.time() - phase3_start:.2f}s")
+        
+        # PHASE 4: Add startup jobs OUTSIDE lock (scheduler is already running)
+        logger.debug("[PHASE 4] Adding startup jobs (outside lock)...")
+        
+        # Log startup summary
+        jobs = scheduler.get_jobs()
+        logger.info("="*50)
+        logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
+        for job in jobs:
+            next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
+            logger.debug(f"   📋 {job.id}: {next_run}")
+        logger.info("="*50)
+        
+        # Add startup jobs (wrapped in try/catch - non-fatal if they fail)
+        try:
+            from scheduler.backfill import startup_backfill_check
         except ModuleNotFoundError:
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
-            from scheduler.jobs import register_default_jobs
+            from scheduler.backfill import startup_backfill_check
         
-        logger.debug("  → Registering default jobs...")
-        register_default_jobs(scheduler)
-        
-        # Start scheduler
         try:
-            scheduler.start()
-            logger.debug("  → scheduler.start() called")
+            scheduler.add_job(
+                startup_backfill_check,
+                trigger='date',
+                id='startup_backfill',
+                name='Startup Backfill Check',
+                replace_existing=True
+            )
+            logger.debug("  📋 Scheduled startup backfill check")
         except Exception as e:
-            logger.error(f"  ❌ Failed to start scheduler: {e}", exc_info=True)
-            raise
+            logger.warning(f"  ⚠️ Failed to schedule backfill check: {e}")
         
-        # Verify scheduler actually started (APScheduler.start() is async)
-        max_wait = 2.0
-        wait_interval = 0.1
-        waited = 0.0
-        while not scheduler.running and waited < max_wait:
-            time.sleep(wait_interval)
-            waited += wait_interval
+        # Note: check_overdue_jobs() removed - no longer needed with SQLAlchemyJobStore
+        # APScheduler handles misfires automatically via misfire_grace_time
         
-        if not scheduler.running:
-            logger.error("  ❌ Scheduler not running after start()")
-            raise RuntimeError("Scheduler failed to start - not running after start() call")
+        try:
+            from apscheduler.triggers.interval import IntervalTrigger
+            scheduler.add_job(
+                check_scheduler_health,
+                trigger=IntervalTrigger(minutes=5),
+                id='scheduler_health_check',
+                name='Scheduler Health Check',
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True
+            )
+            logger.debug("  📋 Scheduled scheduler health check (every 5 minutes)")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Failed to schedule health check: {e}")
         
-        logger.debug(f"  ✅ Scheduler running (verified in {waited:.2f}s)")
-    
-    logger.debug(f"  → Phase 3 completed in {time.time() - phase3_start:.2f}s")
-    
-    # PHASE 4: Add startup jobs OUTSIDE lock (scheduler is already running)
-    logger.debug("[PHASE 4] Adding startup jobs (outside lock)...")
-    
-    # Log startup summary
-    jobs = scheduler.get_jobs()
-    logger.info("="*50)
-    logger.info(f"✅ SCHEDULER STARTED - {len(jobs)} jobs registered")
-    for job in jobs:
-        next_run = job.next_run_time.strftime('%Y-%m-%d %H:%M %Z') if job.next_run_time else 'PAUSED'
-        logger.debug(f"   📋 {job.id}: {next_run}")
-    logger.info("="*50)
-    
-    # Add startup jobs (wrapped in try/catch - non-fatal if they fail)
-    try:
-        from scheduler.backfill import startup_backfill_check
-    except ModuleNotFoundError:
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
-        from scheduler.backfill import startup_backfill_check
-    
-    try:
-        scheduler.add_job(
-            startup_backfill_check,
-            trigger='date',
-            id='startup_backfill',
-            name='Startup Backfill Check',
-            replace_existing=True
-        )
-        logger.debug("  📋 Scheduled startup backfill check")
-    except Exception as e:
-        logger.warning(f"  ⚠️ Failed to schedule backfill check: {e}")
-    
-    # Note: check_overdue_jobs() removed - no longer needed with SQLAlchemyJobStore
-    # APScheduler handles misfires automatically via misfire_grace_time
-    
-    try:
-        from apscheduler.triggers.interval import IntervalTrigger
-        scheduler.add_job(
-            check_scheduler_health,
-            trigger=IntervalTrigger(minutes=5),
-            id='scheduler_health_check',
-            name='Scheduler Health Check',
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True
-        )
-        logger.debug("  📋 Scheduled scheduler health check (every 5 minutes)")
-    except Exception as e:
-        logger.warning(f"  ⚠️ Failed to schedule health check: {e}")
-    
-    # Add heartbeat job to update status file for cross-process detection
-    try:
-        from apscheduler.triggers.interval import IntervalTrigger
-        scheduler.add_job(
-            _update_heartbeat,
-            trigger=IntervalTrigger(seconds=_HEARTBEAT_INTERVAL),
-            id='scheduler_heartbeat',
-            name='Scheduler Heartbeat',
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True
-        )
-        # Also do an immediate heartbeat update
-        _update_heartbeat()
-        logger.debug(f"  💓 Heartbeat job registered (every {_HEARTBEAT_INTERVAL}s)")
-    except Exception as e:
-        logger.warning(f"  ⚠️ Failed to schedule heartbeat: {e}")
-    
-    total_time = time.time() - start_time
-    logger.info(f"✅ SCHEDULER STARTUP COMPLETE in {total_time:.2f}s")
-    
-    return True
+        # Add heartbeat job to update status file for cross-process detection
+        try:
+            from apscheduler.triggers.interval import IntervalTrigger
+            scheduler.add_job(
+                _update_heartbeat,
+                trigger=IntervalTrigger(seconds=_HEARTBEAT_INTERVAL),
+                id='scheduler_heartbeat',
+                name='Scheduler Heartbeat',
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True
+            )
+            # Also do an immediate heartbeat update
+            _update_heartbeat()
+            logger.debug(f"  💓 Heartbeat job registered (every {_HEARTBEAT_INTERVAL}s)")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Failed to schedule heartbeat: {e}")
+        
+        total_time = time.time() - start_time
+        logger.info(f"✅ SCHEDULER STARTUP COMPLETE in {total_time:.2f}s")
+        
+        return True
+        
+    finally:
+        # Always release the startup lock, even if startup failed
+        _release_startup_lock()
 
 
 

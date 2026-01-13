@@ -116,23 +116,30 @@ def render_scheduler_admin():
         
         # Check scheduler status using cross-process safe method (heartbeat file)
         # This avoids creating a new scheduler instance in each Streamlit worker
-        if not is_scheduler_running():
-            st.error("❌ **Scheduler is not running**")
-            st.info("The scheduler may have crashed. Check the logs for errors.")
-            if st.button("🚀 Start Scheduler"):
-                try:
-                    result = start_scheduler()
-                    if result:
-                        st.success("✅ Scheduler started!")
-                    else:
-                        st.warning("⚠️ Scheduler was already running (or failed to start)")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Failed to start scheduler: {e}")
-                    st.exception(e)
-            return
+        scheduler_running = is_scheduler_running()
+        
+        if not scheduler_running:
+            st.warning("⚠️ **Scheduler is not running**")
+            st.info("Jobs are loaded from database but scheduler is stopped. Start it to enable scheduled execution.")
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                if st.button("🚀 Start Scheduler"):
+                    try:
+                        result = start_scheduler()
+                        if result:
+                            st.success("✅ Scheduler started!")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Scheduler was already running (or failed to start)")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Failed to start scheduler: {e}")
+                        st.exception(e)
+        else:
+            st.success("✅ **Scheduler is running**")
         
         # Get all jobs (using cached version for performance)
+        # With SQLAlchemyJobStore, jobs are persisted in database even when scheduler is stopped
         jobs = _get_cached_jobs_status()
         
         if not jobs:

@@ -847,9 +847,10 @@ def get_dividend_data():
     
     try:
         # Fetch dividend data (last 365 days for LTM metrics)
-        dividends_df = fetch_dividend_log_flask(days_lookback=365, fund=fund)
+        # Returns a list of dicts, not a DataFrame
+        dividend_list = fetch_dividend_log_flask(days_lookback=365, fund=fund)
         
-        if dividends_df.empty:
+        if not dividend_list:
             return jsonify({
                 "metrics": {
                     "total_dividends": 0.0,
@@ -862,36 +863,36 @@ def get_dividend_data():
                 "log": []
             })
             
-        # Calculate Metrics (LTM)
-        total_dividends = dividends_df['amount'].sum()
-        total_us_tax = dividends_df['tax_paid'].sum() if 'tax_paid' in dividends_df.columns else 0.0
+        # Calculate Metrics (LTM) from list of dicts
+        # Note: DB column is 'amount_cad' not 'amount', and 'pay_date' not 'date'
+        total_dividends = sum(float(d.get('amount_cad', 0) or 0) for d in dividend_list)
+        total_us_tax = sum(float(d.get('tax_paid', 0) or 0) for d in dividend_list)
         
-        largest_idx = dividends_df['amount'].idxmax()
-        largest_dividend = dividends_df.loc[largest_idx, 'amount']
-        largest_ticker = dividends_df.loc[largest_idx, 'ticker']
+        # Find largest dividend
+        largest_dividend = 0.0
+        largest_ticker = "N/A"
+        for d in dividend_list:
+            amt = float(d.get('amount_cad', 0) or 0)
+            if amt > largest_dividend:
+                largest_dividend = amt
+                largest_ticker = d.get('ticker', 'N/A')
         
         # Calculate Reinvested Shares (DRIP)
-        # Assuming 'shares' column exists and transaction_type is 'DRIP' or similar
-        # If no explicit type, check if shares > 0
-        total_reinvested = 0.0
-        if 'shares' in dividends_df.columns:
-            total_reinvested = dividends_df['shares'].sum()
+        total_reinvested = sum(float(d.get('shares_added', 0) or 0) for d in dividend_list)
             
-        payout_events = len(dividends_df)
+        payout_events = len(dividend_list)
         
-        # Prepare Log (for table)
-        # Sort by date desc
-        dividends_df = dividends_df.sort_values('date', ascending=False)
-        
+        # Prepare Log (for table) - already sorted by pay_date desc from query
         log_data = []
-        for _, row in dividends_df.iterrows():
+        for row in dividend_list:
+            pay_date = row.get('pay_date', '')
             log_data.append({
-                "date": row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date']),
+                "date": pay_date if isinstance(pay_date, str) else str(pay_date),
                 "ticker": row.get('ticker', ''),
-                "amount": row.get('amount', 0.0),
-                "tax": row.get('tax_paid', 0.0),
-                "shares": row.get('shares', 0.0),
-                "type": "DRIP" if row.get('shares', 0) > 0 else "CASH"
+                "amount": float(row.get('amount_cad', 0) or 0),
+                "tax": float(row.get('tax_paid', 0) or 0),
+                "shares": float(row.get('shares_added', 0) or 0),
+                "type": "DRIP" if float(row.get('shares_added', 0) or 0) > 0 else "CASH"
             })
             
         return jsonify({

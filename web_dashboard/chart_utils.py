@@ -15,6 +15,7 @@ import plotly.graph_objs as go
 from typing import Optional, List, Dict, Tuple
 from datetime import datetime, timedelta
 import yfinance as yf
+from ..utils.market_holidays import MarketHolidays
 try:
     from log_handler import log_execution_time
 except ImportError:
@@ -28,6 +29,34 @@ BENCHMARK_CONFIG = {
     'russell2000': {'ticker': '^RUT', 'name': 'Russell 2000', 'color': '#d62728'},
     'vti': {'ticker': 'VTI', 'name': 'Total Market (VTI)', 'color': '#9467bd'}
 }
+
+# Initialize the holiday utility
+MARKET_HOLIDAYS = MarketHolidays()
+
+
+def _add_holiday_shading(fig: go.Figure, start_date: datetime, end_date: datetime,
+                         market: str = 'us',
+                         holiday_color: Optional[str] = 'rgba(211, 211, 211, 0.3)') -> None:
+    """Add shading for market holidays using the centralized utility."""
+    holidays_in_range = MARKET_HOLIDAYS.get_holidays_for_range(start_date.date(), end_date.date(), market=market)
+
+    for holiday_date in holidays_in_range:
+        start_shade = datetime.combine(holiday_date, datetime.min.time())
+        end_shade = start_shade + timedelta(days=1)
+
+        holiday_name = MARKET_HOLIDAYS.get_holiday_name(holiday_date) or "Holiday"
+
+        fig.add_vrect(
+            x0=start_shade,
+            x1=end_shade,
+            fillcolor=holiday_color,
+            layer="below",
+            line_width=0,
+            annotation_text=holiday_name,
+            annotation_position="top left",
+            annotation_font_size=10,
+            annotation_font_color="gray"
+        )
 
 
 # Theme-aware chart helpers
@@ -201,32 +230,21 @@ def _adjust_to_market_close(df: pd.DataFrame, date_column: str = 'date') -> pd.D
     return df
 
 
-def _filter_trading_days(df: pd.DataFrame, date_column: str = 'date') -> pd.DataFrame:
-    """Remove weekend days from dataset to reduce chart data points.
-    
-    Markets are closed on weekends, so these data points are just forward-fills
-    from Friday with no new information. Filtering them:
-    - Reduces data points by ~28-30%
-    - Improves chart rendering performance
-    - No loss of information (weekend values are Friday duplicates)
-    
-    Note: Weekend shading is still shown via _add_weekend_shading()
-    
-    Args:
-        df: DataFrame with date column
-        date_column: Name of the date column to filter
-        
-    Returns:
-        DataFrame with only trading days (Monday-Friday)
-    """
+def _filter_trading_days(df: pd.DataFrame, date_column: str = 'date', market: str = 'us') -> pd.DataFrame:
+    """Remove weekends and holidays from dataset using the centralized utility."""
     if df.empty or date_column not in df.columns:
         return df
-    
+
     df = df.copy()
-    df[date_column] = pd.to_datetime(df[date_column])
-    
-    # Keep only Monday-Friday (weekday() returns 0-6 where 5=Saturday, 6=Sunday)
-    trading_days_mask = df[date_column].dt.weekday < 5
+    # Use errors='coerce' to handle invalid date strings gracefully (converts to NaT)
+    df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
+
+    # Use the is_trading_day method from the utility
+    # Handle NaT values gracefully: treat them as non-trading days (filter them out)
+    trading_days_mask = df[date_column].apply(
+        lambda x: False if pd.isna(x) else MARKET_HOLIDAYS.is_trading_day(x.date(), market=market)
+    )
+
     return df[trading_days_mask]
 
 
@@ -426,13 +444,14 @@ def _fetch_benchmark_data(ticker: str, start_date: datetime, end_date: datetime)
 
 @log_execution_time()
 def create_portfolio_value_chart(
-    portfolio_df: pd.DataFrame, 
-    fund_name: Optional[str] = None, 
+    portfolio_df: pd.DataFrame,
+    fund_name: Optional[str] = None,
     show_normalized: bool = False,
     show_benchmarks: Optional[List[str]] = None,
     show_weekend_shading: bool = True,
     use_solid_lines: bool = False,
-    display_currency: Optional[str] = None
+    display_currency: Optional[str] = None,
+    market: str = 'us'
 ) -> go.Figure:
     """Create a line chart showing portfolio value/performance over time.
     
@@ -464,6 +483,9 @@ def create_portfolio_value_chart(
     df = portfolio_df.sort_values('date').copy()
     df['date'] = pd.to_datetime(df['date'])
     
+    # Filter out non-trading days
+    df = _filter_trading_days(df, 'date', market=market)
+
     # For normalized view, ensure all days before first investment show at 100
     # Days with cost_basis = 0 should have performance_index = 100 (baseline)
     if show_normalized and 'performance_index' in df.columns and 'cost_basis' in df.columns:
@@ -626,9 +648,16 @@ def create_portfolio_value_chart(
         benchmark_total_time = time.time() - benchmark_start
         logger.info(f"⏱️ create_portfolio_value_chart - All benchmarks: {benchmark_total_time:.2f}s")
     
-    # Add weekend shading
+    # Add weekend and holiday shading
     if show_weekend_shading and len(df) > 1:
-        _add_weekend_shading(fig, df['date'].min(), df['date'].max())
+        start_date = df['date'].min()
+        end_date = df['date'].max()
+
+        # Weekend shading
+        _add_weekend_shading(fig, start_date, end_date)
+
+        # Holiday shading
+        _add_holiday_shading(fig, start_date, end_date, market=market)
     
     # Title
     title = f"Portfolio {'Performance' if show_normalized else 'Value'} Over Time"
@@ -1279,7 +1308,8 @@ def create_ticker_price_chart(
     show_benchmarks: Optional[List[str]] = None,
     show_weekend_shading: bool = True,
     use_solid_lines: bool = False,
-    theme: str = 'system'
+    theme: str = 'system',
+    market: str = 'us'
 ) -> go.Figure:
     """Create a price history chart for an individual ticker with benchmark comparisons.
     
@@ -1310,6 +1340,9 @@ def create_ticker_price_chart(
     df = ticker_df.sort_values('date').copy()
     df['date'] = pd.to_datetime(df['date'])
     
+    # Filter out non-trading days
+    df = _filter_trading_days(df, 'date', market=market)
+
     # Adjust dates to market close time (13:00 PST) for proper alignment with weekend shading
     df = _adjust_to_market_close(df, 'date')
     
@@ -1403,10 +1436,18 @@ def create_ticker_price_chart(
     theme = theme or 'system'
     theme_config = get_chart_theme_config(theme)
     
-    # Add weekend shading with theme-aware colors
+    # Add weekend and holiday shading
     if show_weekend_shading and len(df) > 1:
-        _add_weekend_shading(fig, df['date'].min(), df['date'].max(), 
+        start_date = df['date'].min()
+        end_date = df['date'].max()
+
+        # Weekend shading
+        _add_weekend_shading(fig, start_date, end_date,
                             weekend_color=theme_config['weekend_shading_color'])
+
+        # Holiday shading
+        _add_holiday_shading(fig, start_date, end_date, market=market,
+                            holiday_color=theme_config['weekend_shading_color'])
     
     # Add baseline reference line with theme-aware color
     fig.add_hline(

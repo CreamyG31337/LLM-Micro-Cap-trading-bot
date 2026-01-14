@@ -234,12 +234,16 @@ def _filter_trading_days(df: pd.DataFrame, date_column: str = 'date', market: st
     """Remove weekends and holidays from dataset using the centralized utility."""
     if df.empty or date_column not in df.columns:
         return df
-    
+
     df = df.copy()
-    df[date_column] = pd.to_datetime(df[date_column])
-    
+    # Use errors='coerce' to handle invalid date strings gracefully (converts to NaT)
+    df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
+
     # Use the is_trading_day method from the utility
-    trading_days_mask = df[date_column].apply(lambda x: MARKET_HOLIDAYS.is_trading_day(x.date(), market=market))
+    # Handle NaT values gracefully: treat them as non-trading days (filter them out)
+    trading_days_mask = df[date_column].apply(
+        lambda x: False if pd.isna(x) else MARKET_HOLIDAYS.is_trading_day(x.date(), market=market)
+    )
 
     return df[trading_days_mask]
 

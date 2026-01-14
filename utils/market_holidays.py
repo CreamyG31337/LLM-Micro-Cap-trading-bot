@@ -273,7 +273,17 @@ class MarketHolidays:
         return trading_days
 
     def get_holidays_for_range(self, start_date: date, end_date: date, market: str = "us") -> List[date]:
-        """Get all holidays in the given date range for a specific market."""
+        """
+        Get all holidays in the given date range for a specific market.
+
+        Args:
+            start_date: Start date (inclusive)
+            end_date: End date (inclusive)
+            market: "us", "canadian", "both", or "any"
+
+        Returns:
+            List of holiday dates
+        """
         holidays = []
         for year in range(start_date.year, end_date.year + 1):
             year_holidays = self._get_holidays_for_year(year)
@@ -283,6 +293,14 @@ class MarketHolidays:
                 market_holidays = year_holidays['us'].union(year_holidays['shared'])
             elif market == 'canadian':
                 market_holidays = year_holidays['canadian'].union(year_holidays['shared'])
+            elif market == 'both':
+                # Both markets closed - only shared holidays
+                market_holidays = year_holidays['shared']
+            elif market == 'any':
+                # Either market closed - all holidays from both markets
+                market_holidays = year_holidays['us'].union(year_holidays['canadian']).union(year_holidays['shared'])
+            else:
+                raise ValueError("Market must be 'us', 'canadian', 'both', or 'any'")
 
             for holiday in market_holidays:
                 if start_date <= holiday <= end_date:

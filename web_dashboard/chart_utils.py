@@ -10,12 +10,20 @@ Features:
 - Trade timeline charts
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports from root (utils, config, etc.)
+parent_dir = Path(__file__).parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
 import pandas as pd
 import plotly.graph_objs as go
 from typing import Optional, List, Dict, Tuple
 from datetime import datetime, timedelta
 import yfinance as yf
-from ..utils.market_holidays import MarketHolidays
+from utils.market_holidays import MarketHolidays
 try:
     from log_handler import log_execution_time
 except ImportError:

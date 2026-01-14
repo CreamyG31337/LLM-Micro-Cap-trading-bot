@@ -724,7 +724,18 @@ async function fetchSummary(): Promise<void> {
         }
 
         // Update Fund Stats & Rates
-        if (data.investor_count !== undefined) updateMetric('metric-investors', data.investor_count, '', false);
+        if (data.investor_count !== undefined) {
+            const investorContainer = document.getElementById('investor-metric-container');
+            if (investorContainer) {
+                // Hide Investors metric if count <= 1 (single-investor or no-investor funds)
+                if (data.investor_count <= 1) {
+                    investorContainer.classList.add('hidden');
+                } else {
+                    investorContainer.classList.remove('hidden');
+                    updateMetric('metric-investors', data.investor_count, '', false);
+                }
+            }
+        }
         if (data.holdings_count !== undefined) updateMetric('metric-holdings-count', data.holdings_count, '', false);
         if (data.exchange_rates) {
             updateMetric('metric-usd-cad', data.exchange_rates.USD_CAD, '', false); // Just number, no currency format

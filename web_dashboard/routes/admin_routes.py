@@ -2066,6 +2066,273 @@ def api_add_blacklist():
         return jsonify({"error": str(e)}), 500
 
 @admin_bp.route('/api/admin/ai/blacklist', methods=['DELETE'])
+
+# Contributor Management Routes
+@admin_bp.route('/v2/admin/contributors')
+@require_admin
+def contributors_page():
+    """Contributor management page"""
+    from app import get_navigation_context
+    nav_context = get_navigation_context('admin_contributors')
+    return render_template('contributors.html', **nav_context)
+
+@admin_bp.route('/api/admin/contributors/<contributor_id>/contributions')
+@require_admin
+def api_admin_contributor_contributions(contributor_id):
+    """Get all fund contributions for a contributor"""
+    try:
+        from app import get_supabase_client
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database", "contributions": []}), 500
+        
+        # Get contributor details
+        contrib_result = client.supabase.table("contributors").select("*").eq("id", contributor_id).execute()
+        if not contrib_result.data:
+            return jsonify({"error": "Contributor not found", "contributions": []}), 404
+        
+        contributor = contrib_result.data[0]
+        
+        # Get contributions by contributor_id
+        contribs_result = client.supabase.table("fund_contributions")\
+            .select("*")\
+            .eq("contributor_id", contributor_id)\
+            .execute()
+        
+        # Also get by name (legacy)
+        contribs_by_name = client.supabase.table("fund_contributions")\
+            .select("*")\
+            .eq("contributor", contributor['name'])\
+            .execute()
+        
+        # Combine and deduplicate
+        all_contribs = contribs_result.data or []
+        contrib_ids = {c.get('id') for c in all_contribs}
+        for c in (contribs_by_name.data or []):
+            if c.get('id') not in contrib_ids:
+                all_contribs.append(c)
+        
+        return jsonify({
+            "contributor": contributor,
+            "contributions": all_contribs
+        })
+    except Exception as e:
+        logger.error(f"Error getting contributor contributions: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to load contributions: {str(e)}", "contributions": []}), 500
+
+@admin_bp.route('/api/admin/contributors/split', methods=['POST'])
+@require_admin
+def api_admin_split_contributor():
+    """Split a contributor into two accounts"""
+    try:
+        from app import get_supabase_client
+        from flask_auth_utils import can_modify_data_flask
+        
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot split contributors"}), 403
+        
+        data = request.get_json()
+        source_contributor_id = data.get('source_contributor_id')
+        new_contributor_name = data.get('new_contributor_name')
+        new_contributor_email = data.get('new_contributor_email')
+        contribution_ids = data.get('contribution_ids', [])
+        
+        if not source_contributor_id or not new_contributor_name or not contribution_ids:
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database"}), 500
+        
+        # Create new contributor
+        new_contrib_data = {
+            "name": new_contributor_name,
+            "email": new_contributor_email if new_contributor_email else None
+        }
+        new_contrib_result = client.supabase.table("contributors").insert(new_contrib_data).execute()
+        
+        if not new_contrib_result.data:
+            return jsonify({"error": "Failed to create new contributor"}), 500
+        
+        new_contrib_id = new_contrib_result.data[0]['id']
+        
+        # Update selected contributions
+        updated_count = 0
+        for contrib_id in contribution_ids:
+            update_data = {
+                "contributor_id": new_contrib_id,
+                "contributor": new_contributor_name
+            }
+            if new_contributor_email:
+                update_data["email"] = new_contributor_email
+            
+            result = client.supabase.table("fund_contributions")\
+                .update(update_data)\
+                .eq("id", contrib_id)\
+                .execute()
+            
+            if result.data:
+                updated_count += 1
+        
+        # Clear cache
+        _get_cached_contributors_flask.clear_all_cache()
+        
+        return jsonify({
+            "success": True,
+            "message": f"Split complete! Created new contributor and moved {updated_count} contribution(s)",
+            "new_contributor_id": new_contrib_id
+        })
+    except Exception as e:
+        logger.error(f"Error splitting contributor: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to split contributor: {str(e)}"}), 500
+
+@admin_bp.route('/api/admin/contributors/merge', methods=['POST'])
+@require_admin
+def api_admin_merge_contributors():
+    """Merge two contributors"""
+    try:
+        from app import get_supabase_client
+        from flask_auth_utils import can_modify_data_flask
+        
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot merge contributors"}), 403
+        
+        data = request.get_json()
+        source_contributor_id = data.get('source_contributor_id')
+        target_contributor_id = data.get('target_contributor_id')
+        
+        if not source_contributor_id or not target_contributor_id:
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        if source_contributor_id == target_contributor_id:
+            return jsonify({"error": "Source and target cannot be the same"}), 400
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database"}), 500
+        
+        # Get contributor details
+        source_result = client.supabase.table("contributors").select("*").eq("id", source_contributor_id).execute()
+        target_result = client.supabase.table("contributors").select("*").eq("id", target_contributor_id).execute()
+        
+        if not source_result.data or not target_result.data:
+            return jsonify({"error": "Contributor not found"}), 404
+        
+        source_contrib = source_result.data[0]
+        target_contrib = target_result.data[0]
+        
+        # Update all contributions
+        update_data = {
+            "contributor_id": target_contributor_id,
+            "contributor": target_contrib['name']
+        }
+        if target_contrib.get('email'):
+            update_data["email"] = target_contrib['email']
+        
+        # Update by contributor_id
+        client.supabase.table("fund_contributions")\
+            .update(update_data)\
+            .eq("contributor_id", source_contributor_id)\
+            .execute()
+        
+        # Update by contributor name (legacy)
+        client.supabase.table("fund_contributions")\
+            .update(update_data)\
+            .eq("contributor", source_contrib['name'])\
+            .execute()
+        
+        # Delete source contributor
+        client.supabase.table("contributors")\
+            .delete()\
+            .eq("id", source_contributor_id)\
+            .execute()
+        
+        # Clear cache
+        _get_cached_contributors_flask.clear_all_cache()
+        
+        return jsonify({
+            "success": True,
+            "message": f"Merged {source_contrib['name']} into {target_contrib['name']}"
+        })
+    except Exception as e:
+        logger.error(f"Error merging contributors: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to merge contributors: {str(e)}"}), 500
+
+@admin_bp.route('/api/admin/contributors/<contributor_id>', methods=['PUT'])
+@require_admin
+def api_admin_update_contributor(contributor_id):
+    """Update contributor details"""
+    try:
+        from app import get_supabase_client
+        from flask_auth_utils import can_modify_data_flask
+        
+        if not can_modify_data_flask():
+            return jsonify({"error": "Read-only admin cannot edit contributors"}), 403
+        
+        data = request.get_json()
+        new_name = data.get('name')
+        new_email = data.get('email')
+        
+        if not new_name:
+            return jsonify({"error": "Name is required"}), 400
+        
+        client = get_supabase_client()
+        if not client:
+            return jsonify({"error": "Failed to connect to database"}), 500
+        
+        # Get current contributor
+        current_result = client.supabase.table("contributors").select("*").eq("id", contributor_id).execute()
+        if not current_result.data:
+            return jsonify({"error": "Contributor not found"}), 404
+        
+        current_contrib = current_result.data[0]
+        
+        # Update contributor
+        update_data = {"name": new_name}
+        if new_email:
+            update_data["email"] = new_email
+        else:
+            update_data["email"] = None
+        
+        result = client.supabase.table("contributors")\
+            .update(update_data)\
+            .eq("id", contributor_id)\
+            .execute()
+        
+        if not result.data:
+            return jsonify({"error": "Failed to update contributor"}), 500
+        
+        # Update fund_contributions if name changed
+        if new_name != current_contrib.get('name'):
+            client.supabase.table("fund_contributions")\
+                .update({"contributor": new_name})\
+                .eq("contributor_id", contributor_id)\
+                .execute()
+            
+            # Also update by old name (legacy)
+            client.supabase.table("fund_contributions")\
+                .update({"contributor": new_name})\
+                .eq("contributor", current_contrib.get('name'))\
+                .execute()
+        
+        # Update email in fund_contributions if changed
+        if new_email != current_contrib.get('email'):
+            if new_email:
+                client.supabase.table("fund_contributions")\
+                    .update({"email": new_email})\
+                    .eq("contributor_id", contributor_id)\
+                    .execute()
+        
+        # Clear cache
+        _get_cached_contributors_flask.clear_all_cache()
+        
+        return jsonify({
+            "success": True,
+            "message": "Contributor updated successfully"
+        })
+    except Exception as e:
+        logger.error(f"Error updating contributor: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to update contributor: {str(e)}"}), 500
 @require_admin
 def api_remove_blacklist():
     """Remove domain from blacklist"""

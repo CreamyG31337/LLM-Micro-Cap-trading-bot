@@ -20,6 +20,7 @@ MIGRATED_PAGES = {
     'admin_scheduler': '/v2/admin/scheduler',
     'admin_trade_entry': '/v2/admin/trade-entry',
     'admin_contributions': '/v2/admin/contributions',
+    'admin_contributors': '/v2/admin/contributors',
     'admin_ai_settings': '/v2/admin/ai-settings',
     'admin_system': '/v2/admin/system',
 }

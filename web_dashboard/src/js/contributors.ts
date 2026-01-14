@@ -1,0 +1,602 @@
+/**
+ * Contributor Management
+ * Handles contributor viewing, splitting, merging, and editing
+ */
+
+interface ContributorData {
+    id: string;
+    name: string;
+    email: string | null;
+    phone?: string;
+    address?: string;
+    kyc_status?: string;
+}
+
+interface Contribution {
+    id: string;
+    fund: string;
+    contributor: string;
+    contributor_id?: string;
+    email?: string;
+    amount: number;
+    contribution_type: 'CONTRIBUTION' | 'WITHDRAWAL';
+    timestamp: string;
+    notes?: string;
+}
+
+// Use a scoped variable to avoid conflicts with users.ts
+const contributorManager = {
+    contributors: [] as ContributorData[],
+    currentContributor: null as ContributorData | null,
+    currentContributions: [] as Contribution[]
+};
+
+// Tab management
+function initTabs(): void {
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const targetTab = button.getAttribute('id')?.replace('tab-', 'tab-content-');
+            
+            // Remove active class from all
+            tabButtons.forEach(btn => {
+                btn.classList.remove('active', 'border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Add active class to selected
+            button.classList.add('active', 'border-blue-500', 'text-blue-600');
+            button.classList.remove('border-transparent', 'text-gray-500');
+            
+            if (targetTab) {
+                const targetContent = document.getElementById(targetTab);
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+            }
+        });
+    });
+}
+
+// Load contributors
+async function loadContributors(): Promise<void> {
+    const loadingEl = document.getElementById('loading-contributors');
+    const listEl = document.getElementById('contributors-list');
+    const noContributorsEl = document.getElementById('no-contributors');
+    const errorEl = document.getElementById('error-contributors');
+    
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (listEl) listEl.classList.add('hidden');
+    if (noContributorsEl) noContributorsEl.classList.add('hidden');
+    if (errorEl) errorEl.classList.add('hidden');
+    
+    try {
+        const response = await fetch('/api/admin/contributors');
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load contributors');
+        }
+        
+        contributorManager.contributors = data.contributors || [];
+        
+        if (loadingEl) loadingEl.classList.add('hidden');
+        
+        if (contributorManager.contributors.length === 0) {
+            if (noContributorsEl) noContributorsEl.classList.remove('hidden');
+        } else {
+            if (listEl) {
+                renderContributors(contributorManager.contributors);
+                listEl.classList.remove('hidden');
+            }
+        }
+        
+        // Populate select dropdowns
+        populateSelectDropdowns();
+        
+    } catch (error) {
+        console.error('Error loading contributors:', error);
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (errorEl) {
+            errorEl.classList.remove('hidden');
+            const errorText = document.getElementById('error-contributors-text');
+            if (errorText) {
+                errorText.textContent = error instanceof Error ? error.message : 'Failed to load contributors';
+            }
+        }
+    }
+}
+
+// Render contributors list
+function renderContributors(contribs: ContributorData[]): void {
+    const container = document.getElementById('contributors-list');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    contribs.forEach(contrib => {
+        const card = document.createElement('div');
+        card.className = 'contributor-card bg-white rounded-lg shadow p-6 mb-4';
+        card.innerHTML = `
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-1">${escapeHtml(contrib.name)}</h3>
+                    <p class="text-sm text-gray-600 mb-2">${contrib.email || 'No email'}</p>
+                    <p class="text-xs text-gray-500">ID: ${contrib.id.substring(0, 8)}...</p>
+                </div>
+                <button class="view-contributions-btn bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
+                        data-contributor-id="${contrib.id}">
+                    <i class="fas fa-eye mr-1"></i>View Contributions
+                </button>
+            </div>
+            <div id="contributions-${contrib.id}" class="hidden mt-4 pt-4 border-t border-gray-200">
+                <div class="text-sm text-gray-600">Loading contributions...</div>
+            </div>
+        `;
+        
+        container.appendChild(card);
+        
+        // Add click handler for view contributions
+        const viewBtn = card.querySelector('.view-contributions-btn');
+        if (viewBtn) {
+            viewBtn.addEventListener('click', () => {
+                const contribDiv = document.getElementById(`contributions-${contrib.id}`);
+                if (contribDiv) {
+                    if (contribDiv.classList.contains('hidden')) {
+                        loadContributorContributions(contrib.id, contribDiv);
+                        contribDiv.classList.remove('hidden');
+                    } else {
+                        contribDiv.classList.add('hidden');
+                    }
+                }
+            });
+        }
+    });
+}
+
+// Load contributions for a contributor
+async function loadContributorContributions(contributorId: string, container: HTMLElement): Promise<void> {
+    try {
+        const response = await fetch(`/api/admin/contributors/${contributorId}/contributions`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load contributions');
+        }
+        
+        const contributions = data.contributions || [];
+        
+        if (contributions.length === 0) {
+            container.innerHTML = '<p class="text-sm text-gray-500">No contributions found</p>';
+            return;
+        }
+        
+        // Group by fund
+        const byFund: Record<string, Contribution[]> = {};
+        contributions.forEach((c: Contribution) => {
+            const fund = c.fund || 'Unknown';
+            if (!byFund[fund]) {
+                byFund[fund] = [];
+            }
+            byFund[fund].push(c);
+        });
+        
+        let html = '<div class="space-y-4">';
+        for (const [fund, contribs] of Object.entries(byFund)) {
+            const net = contribs.reduce((sum, c) => {
+                const amount = parseFloat(String(c.amount || 0));
+                return sum + (c.contribution_type === 'CONTRIBUTION' ? amount : -amount);
+            }, 0);
+            
+            html += `
+                <div class="bg-gray-50 rounded p-3">
+                    <h4 class="font-semibold text-gray-900 mb-2">${escapeHtml(fund)}</h4>
+                    <p class="text-sm text-gray-600">${contribs.length} transaction(s), Net: $${net.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                </div>
+            `;
+        }
+        html += '</div>';
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error loading contributions:', error);
+        container.innerHTML = `<p class="text-sm text-red-600">Error: ${error instanceof Error ? error.message : 'Failed to load contributions'}</p>`;
+    }
+}
+
+// Populate select dropdowns
+function populateSelectDropdowns(): void {
+    const options = contributorManager.contributors.map(c => ({
+        value: c.id,
+        text: `${c.name} (${c.email || 'No email'})`
+    }));
+    
+    // Split contributor select
+    const splitSelect = document.getElementById('split-contributor-select') as HTMLSelectElement;
+    if (splitSelect) {
+        splitSelect.innerHTML = '<option value="">-- Select Contributor --</option>' +
+            options.map(opt => `<option value="${opt.value}">${opt.text}</option>`).join('');
+        
+        splitSelect.addEventListener('change', (e) => {
+            const select = e.target as HTMLSelectElement;
+            const contributorId = select.value;
+            if (contributorId) {
+                loadContributorForSplit(contributorId);
+            } else {
+                const detailsDiv = document.getElementById('split-contributor-details');
+                if (detailsDiv) detailsDiv.classList.add('hidden');
+            }
+        });
+    }
+    
+    // Merge selects
+    const mergeSource = document.getElementById('merge-source-select') as HTMLSelectElement;
+    const mergeTarget = document.getElementById('merge-target-select') as HTMLSelectElement;
+    if (mergeSource) {
+        mergeSource.innerHTML = '<option value="">-- Select Source --</option>' +
+            options.map(opt => `<option value="${opt.value}">${opt.text}</option>`).join('');
+    }
+    if (mergeTarget) {
+        mergeTarget.innerHTML = '<option value="">-- Select Target --</option>' +
+            options.map(opt => `<option value="${opt.value}">${opt.text}</option>`).join('');
+        
+        // Update merge preview
+        if (mergeSource && mergeTarget) {
+            const updateMergePreview = () => {
+                const sourceId = mergeSource.value;
+                const targetId = mergeTarget.value;
+                const preview = document.getElementById('merge-preview');
+                const btn = document.getElementById('merge-contributors-btn') as HTMLButtonElement;
+                
+                if (sourceId && targetId && sourceId !== targetId) {
+                    if (preview) {
+                        const source = contributorManager.contributors.find(c => c.id === sourceId);
+                        const target = contributorManager.contributors.find(c => c.id === targetId);
+                        if (source && target) {
+                            preview.classList.remove('hidden');
+                            const previewText = document.getElementById('merge-preview-text');
+                            if (previewText) {
+                                previewText.textContent = `Will merge "${source.name}" into "${target.name}"`;
+                            }
+                        }
+                    }
+                    if (btn) btn.disabled = false;
+                } else {
+                    if (preview) preview.classList.add('hidden');
+                    if (btn) btn.disabled = true;
+                }
+            };
+            
+            mergeSource.addEventListener('change', updateMergePreview);
+            mergeTarget.addEventListener('change', updateMergePreview);
+        }
+    }
+    
+    // Edit select
+    const editSelect = document.getElementById('edit-contributor-select') as HTMLSelectElement;
+    if (editSelect) {
+        editSelect.innerHTML = '<option value="">-- Select Contributor --</option>' +
+            options.map(opt => `<option value="${opt.value}">${opt.text}</option>`).join('');
+        
+        editSelect.addEventListener('change', (e) => {
+            const select = e.target as HTMLSelectElement;
+            const contributorId = select.value;
+            if (contributorId) {
+                loadContributorForEdit(contributorId);
+            } else {
+                const formDiv = document.getElementById('edit-contributor-form');
+                if (formDiv) formDiv.classList.add('hidden');
+            }
+        });
+    }
+}
+
+// Load contributor for split
+async function loadContributorForSplit(contributorId: string): Promise<void> {
+    try {
+        const response = await fetch(`/api/admin/contributors/${contributorId}/contributions`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to load contributions');
+        }
+        
+        contributorManager.currentContributor = data.contributor;
+        contributorManager.currentContributions = data.contributions || [];
+        
+        const detailsDiv = document.getElementById('split-contributor-details');
+        if (detailsDiv) {
+            detailsDiv.classList.remove('hidden');
+            
+            // Render contributions list
+            const contribsList = document.getElementById('split-contributions-list');
+            if (contribsList) {
+                if (contributorManager.currentContributions.length === 0) {
+                    contribsList.innerHTML = '<p class="text-sm text-gray-500">No contributions found</p>';
+                } else {
+                    contribsList.innerHTML = contributorManager.currentContributions.map((c: Contribution) => {
+                        const date = new Date(c.timestamp).toLocaleDateString();
+                        const amount = parseFloat(String(c.amount || 0));
+                        return `
+                            <label class="flex items-center p-2 hover:bg-gray-100 rounded cursor-pointer">
+                                <input type="checkbox" value="${c.id}" class="mr-3 contribution-checkbox">
+                                <span class="flex-1">
+                                    ${escapeHtml(c.fund || 'Unknown')} - $${amount.toLocaleString('en-US', {minimumFractionDigits: 2})} 
+                                    (${c.contribution_type}) - ${date}
+                                </span>
+                            </label>
+                        `;
+                    }).join('');
+                }
+            }
+            
+            // Enable split button when contributions selected
+            const splitBtn = document.getElementById('split-contributor-btn') as HTMLButtonElement;
+            const nameInput = document.getElementById('new-contributor-name') as HTMLInputElement;
+            
+            const updateSplitButton = () => {
+                const checked = document.querySelectorAll('.contribution-checkbox:checked');
+                if (splitBtn && nameInput) {
+                    splitBtn.disabled = checked.length === 0 || !nameInput.value.trim();
+                }
+            };
+            
+            document.querySelectorAll('.contribution-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateSplitButton);
+            });
+            
+            if (nameInput) {
+                nameInput.addEventListener('input', updateSplitButton);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error loading contributor:', error);
+        alert(`Error: ${error instanceof Error ? error.message : 'Failed to load contributor'}`);
+    }
+}
+
+// Split contributor
+async function splitContributor(): Promise<void> {
+    const contributorId = (document.getElementById('split-contributor-select') as HTMLSelectElement)?.value;
+    const newName = (document.getElementById('new-contributor-name') as HTMLInputElement)?.value;
+    const newEmail = (document.getElementById('new-contributor-email') as HTMLInputElement)?.value;
+    const checked = Array.from(document.querySelectorAll('.contribution-checkbox:checked'))
+        .map(cb => (cb as HTMLInputElement).value);
+    
+    if (!contributorId || !newName || checked.length === 0) {
+        alert('Please fill in all required fields and select at least one contribution');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/admin/contributors/split', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_contributor_id: contributorId,
+                new_contributor_name: newName,
+                new_contributor_email: newEmail || null,
+                contribution_ids: checked
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to split contributor');
+        }
+        
+        const resultDiv = document.getElementById('split-result');
+        if (resultDiv) {
+            resultDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-4 p-4 bg-green-50 border border-green-200 rounded-md';
+            resultDiv.innerHTML = `<p class="text-green-800">✅ ${data.message}</p>`;
+        }
+        
+        // Reload contributors
+        await loadContributors();
+        
+        // Reset form
+        (document.getElementById('split-contributor-select') as HTMLSelectElement).value = '';
+        (document.getElementById('new-contributor-name') as HTMLInputElement).value = '';
+        (document.getElementById('new-contributor-email') as HTMLInputElement).value = '';
+        const detailsDiv = document.getElementById('split-contributor-details');
+        if (detailsDiv) detailsDiv.classList.add('hidden');
+        
+    } catch (error) {
+        console.error('Error splitting contributor:', error);
+        const resultDiv = document.getElementById('split-result');
+        if (resultDiv) {
+            resultDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-4 p-4 bg-red-50 border border-red-200 rounded-md';
+            resultDiv.innerHTML = `<p class="text-red-800">❌ ${error instanceof Error ? error.message : 'Failed to split contributor'}</p>`;
+        }
+    }
+}
+
+// Merge contributors
+async function mergeContributors(): Promise<void> {
+    const sourceId = (document.getElementById('merge-source-select') as HTMLSelectElement)?.value;
+    const targetId = (document.getElementById('merge-target-select') as HTMLSelectElement)?.value;
+    
+    if (!sourceId || !targetId || sourceId === targetId) {
+        alert('Please select different source and target contributors');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to merge these contributors? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/admin/contributors/merge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_contributor_id: sourceId,
+                target_contributor_id: targetId
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to merge contributors');
+        }
+        
+        const resultDiv = document.getElementById('merge-result');
+        if (resultDiv) {
+            resultDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-4 p-4 bg-green-50 border border-green-200 rounded-md';
+            resultDiv.innerHTML = `<p class="text-green-800">✅ ${data.message}</p>`;
+        }
+        
+        // Reload contributors
+        await loadContributors();
+        
+        // Reset form
+        (document.getElementById('merge-source-select') as HTMLSelectElement).value = '';
+        (document.getElementById('merge-target-select') as HTMLSelectElement).value = '';
+        const preview = document.getElementById('merge-preview');
+        if (preview) preview.classList.add('hidden');
+        
+    } catch (error) {
+        console.error('Error merging contributors:', error);
+        const resultDiv = document.getElementById('merge-result');
+        if (resultDiv) {
+            resultDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-4 p-4 bg-red-50 border border-red-200 rounded-md';
+            resultDiv.innerHTML = `<p class="text-red-800">❌ ${error instanceof Error ? error.message : 'Failed to merge contributors'}</p>`;
+        }
+    }
+}
+
+// Load contributor for edit
+function loadContributorForEdit(contributorId: string): void {
+    const contributor = contributorManager.contributors.find(c => c.id === contributorId);
+    if (!contributor) return;
+    
+    const formDiv = document.getElementById('edit-contributor-form');
+    if (formDiv) {
+        formDiv.classList.remove('hidden');
+        
+        const nameInput = document.getElementById('edit-contributor-name') as HTMLInputElement;
+        const emailInput = document.getElementById('edit-contributor-email') as HTMLInputElement;
+        
+        if (nameInput) nameInput.value = contributor.name;
+        if (emailInput) emailInput.value = contributor.email || '';
+    }
+}
+
+// Update contributor
+async function updateContributor(): Promise<void> {
+    const contributorId = (document.getElementById('edit-contributor-select') as HTMLSelectElement)?.value;
+    const name = (document.getElementById('edit-contributor-name') as HTMLInputElement)?.value;
+    const email = (document.getElementById('edit-contributor-email') as HTMLInputElement)?.value;
+    
+    if (!contributorId || !name) {
+        alert('Please select a contributor and enter a name');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/contributors/${contributorId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name,
+                email: email || null
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to update contributor');
+        }
+        
+        const resultDiv = document.getElementById('edit-result');
+        if (resultDiv) {
+            resultDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-4 p-4 bg-green-50 border border-green-200 rounded-md';
+            resultDiv.innerHTML = `<p class="text-green-800">✅ ${data.message}</p>`;
+        }
+        
+        // Reload contributors
+        await loadContributors();
+        
+    } catch (error) {
+        console.error('Error updating contributor:', error);
+        const resultDiv = document.getElementById('edit-result');
+        if (resultDiv) {
+            resultDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-4 p-4 bg-red-50 border border-red-200 rounded-md';
+            resultDiv.innerHTML = `<p class="text-red-800">❌ ${error instanceof Error ? error.message : 'Failed to update contributor'}</p>`;
+        }
+    }
+}
+
+// Search functionality
+function initSearch(): void {
+    const nameSearch = document.getElementById('search-name') as HTMLInputElement;
+    const emailSearch = document.getElementById('search-email') as HTMLInputElement;
+    
+    const filterContributors = () => {
+        const nameFilter = nameSearch?.value.toLowerCase() || '';
+        const emailFilter = emailSearch?.value.toLowerCase() || '';
+        
+        const filtered = contributorManager.contributors.filter(c => {
+            const nameMatch = !nameFilter || c.name.toLowerCase().includes(nameFilter);
+            const emailMatch = !emailFilter || (c.email || '').toLowerCase().includes(emailFilter);
+            return nameMatch && emailMatch;
+        });
+        
+        renderContributors(filtered);
+    };
+    
+    if (nameSearch) nameSearch.addEventListener('input', filterContributors);
+    if (emailSearch) emailSearch.addEventListener('input', filterContributors);
+}
+
+// Utility function
+function escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+    initTabs();
+    initSearch();
+    loadContributors();
+    
+    // Refresh button
+    const refreshBtn = document.getElementById('refresh-contributors-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => loadContributors());
+    }
+    
+    // Split button
+    const splitBtn = document.getElementById('split-contributor-btn');
+    if (splitBtn) {
+        splitBtn.addEventListener('click', () => splitContributor());
+    }
+    
+    // Merge button
+    const mergeBtn = document.getElementById('merge-contributors-btn');
+    if (mergeBtn) {
+        mergeBtn.addEventListener('click', () => mergeContributors());
+    }
+    
+    // Save button
+    const saveBtn = document.getElementById('save-contributor-btn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => updateContributor());
+    }
+});

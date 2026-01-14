@@ -350,6 +350,24 @@ def render_navigation(show_ai_assistant: bool = True, show_settings: bool = True
                 # Fallback if shared_navigation not available
                 st.sidebar.page_link("pages/admin_users.py", label="User & Access", icon="👥")
             
+            # Contributor Management link - check if migrated to Flask
+            try:
+                from shared_navigation import is_page_migrated, get_page_url
+                if is_v2_enabled and is_page_migrated('admin_contributors'):
+                    # Use markdown link for Flask route with matching Streamlit styling
+                    contributors_url = get_page_url('admin_contributors')
+                    st.sidebar.markdown(f'''
+                        <a href="{contributors_url}" target="_self" class="v2-nav-link">
+                            <span class="v2-nav-icon">👤</span>
+                            <span class="v2-nav-label">Contributors</span>
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.sidebar.page_link("pages/admin_contributors.py", label="Contributors", icon="👤")
+            except ImportError:
+                # Fallback if shared_navigation not available
+                st.sidebar.page_link("pages/admin_contributors.py", label="Contributors", icon="👤")
+            
             # Fund Management - check if migrated to Flask
             try:
                 from shared_navigation import is_page_migrated, get_page_url

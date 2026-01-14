@@ -271,6 +271,23 @@ class MarketHolidays:
             current_date += timedelta(days=1)
         
         return trading_days
+
+    def get_holidays_for_range(self, start_date: date, end_date: date, market: str = "us") -> List[date]:
+        """Get all holidays in the given date range for a specific market."""
+        holidays = []
+        for year in range(start_date.year, end_date.year + 1):
+            year_holidays = self._get_holidays_for_year(year)
+
+            market_holidays = set()
+            if market == 'us':
+                market_holidays = year_holidays['us'].union(year_holidays['shared'])
+            elif market == 'canadian':
+                market_holidays = year_holidays['canadian'].union(year_holidays['shared'])
+
+            for holiday in market_holidays:
+                if start_date <= holiday <= end_date:
+                    holidays.append(holiday)
+        return holidays
     
     def get_holiday_name(self, check_date: date) -> Optional[str]:
         """

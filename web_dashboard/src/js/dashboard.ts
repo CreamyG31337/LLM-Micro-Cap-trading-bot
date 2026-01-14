@@ -30,9 +30,39 @@ interface DashboardSummary {
     thesis?: {
         title: string;
         overview: string;
+        pillars?: Array<{
+            name: string;
+            allocation: string;
+            thesis: string;
+        }>;
+    };
+    investor_count?: number;
+    holdings_count?: number;
+    exchange_rates?: {
+        USD_CAD: number;
+        CAD_USD: number;
     };
     from_cache: boolean;
     processing_time: number;
+}
+
+interface DividendData {
+    metrics: {
+        total_dividends: number;
+        total_us_tax: number;
+        largest_dividend: number;
+        largest_ticker: string;
+        reinvested_shares: number;
+        payout_events: number;
+    };
+    log: Array<{
+        date: string;
+        ticker: string;
+        type: string;
+        amount: number;
+        tax: number;
+    }>;
+    currency: string;
 }
 
 interface PerformanceChartData {
@@ -121,6 +151,7 @@ function initThemeSync(): void {
             // Re-fetch charts with new theme
             fetchPerformanceChart().catch(err => console.error('[Dashboard] Error refreshing performance chart on theme change:', err));
             fetchSectorChart().catch(err => console.error('[Dashboard] Error refreshing sector chart on theme change:', err));
+            fetchCurrencyChart().catch(err => console.error('[Dashboard] Error refreshing currency chart on theme change:', err));
         });
     } else {
         console.warn('[Dashboard] ThemeManager not found. Chart theme synchronization disabled.');
@@ -561,10 +592,12 @@ async function refreshDashboard(): Promise<void> {
             fetchSummary(),
             fetchPerformanceChart(),
             fetchSectorChart(),
+            fetchCurrencyChart(),
             loadPnlChart(state.currentFund),
             fetchMovers(),
             fetchHoldings(),
-            fetchActivity()
+            fetchActivity(),
+            fetchDividends()
         ]);
 
         const duration = performance.now() - startTime;
@@ -670,6 +703,10 @@ async function fetchSummary(): Promise<void> {
             unrealized_pnl: data.unrealized_pnl,
             display_currency: data.display_currency,
             has_thesis: !!data.thesis,
+            has_pillars: !!data.thesis?.pillars,
+            investors: data.investor_count,
+            holdings: data.holdings_count,
+            rates: data.exchange_rates,
             processing_time: data.processing_time,
             from_cache: data.from_cache
         });
@@ -684,6 +721,19 @@ async function fetchSummary(): Promise<void> {
         const currencyEl = document.getElementById('metric-currency');
         if (currencyEl) {
             currencyEl.textContent = data.display_currency;
+        }
+
+        // Update Fund Stats & Rates
+        if (data.investor_count !== undefined) updateMetric('metric-investors', data.investor_count, '', false);
+        if (data.holdings_count !== undefined) updateMetric('metric-holdings-count', data.holdings_count, '', false);
+        if (data.exchange_rates) {
+            updateMetric('metric-usd-cad', data.exchange_rates.USD_CAD, '', false); // Just number, no currency format
+            // Format rates with 4 decimals
+            const usdCadEl = document.getElementById('metric-usd-cad');
+            if (usdCadEl) usdCadEl.textContent = data.exchange_rates.USD_CAD.toFixed(4);
+            
+            const cadUsdEl = document.getElementById('metric-cad-usd');
+            if (cadUsdEl) cadUsdEl.textContent = data.exchange_rates.CAD_USD.toFixed(4);
         }
 
         // Update Thesis
@@ -702,6 +752,10 @@ async function fetchSummary(): Promise<void> {
                 } else {
                     contentEl.textContent = data.thesis.overview || '';
                 }
+            }
+            // Render Pillars
+            if (data.thesis.pillars && data.thesis.pillars.length > 0) {
+                renderPillars(data.thesis.pillars);
             }
         } else {
             if (thesisContainer) {
@@ -1145,6 +1199,170 @@ async function fetchMovers(): Promise<void> {
         if (losersBody) {
             losersBody.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">Error: ${errorMsg}</td></tr>`;
         }
+    }
+}
+
+function renderPillars(pillars: Array<{ name: string; allocation: string; thesis: string; }>): void {
+    const container = document.getElementById('thesis-pillars');
+    if (!container) return;
+
+    container.innerHTML = '';
+    container.classList.remove('hidden');
+
+    pillars.forEach(pillar => {
+        const div = document.createElement('div');
+        div.className = 'flex flex-col gap-2';
+        
+        // Parse markdown for thesis text if available
+        let thesisHtml = pillar.thesis || '';
+        if (typeof (window as any).marked !== 'undefined') {
+            thesisHtml = (window as any).marked.parse(thesisHtml);
+        }
+
+        div.innerHTML = `
+            <div class="font-bold text-gray-900 dark:text-white border-b border-gray-100 dark:border-gray-700 pb-1 mb-1 flex justify-between">
+                <span>${pillar.name}</span>
+                <span class="text-xs font-normal text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">${pillar.allocation || 'N/A'}</span>
+            </div>
+            <div class="text-sm text-gray-600 dark:text-gray-400 prose dark:prose-invert max-w-none text-xs">
+                ${thesisHtml}
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+async function fetchDividends(): Promise<void> {
+    const url = `/api/dashboard/dividends?fund=${encodeURIComponent(state.currentFund)}`;
+    console.log('[Dashboard] Fetching dividends...', { url });
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data: DividendData = await response.json();
+        
+        renderDividends(data);
+    } catch (error) {
+        console.error('[Dashboard] Error fetching dividends:', error);
+        // Set values to error state
+        ['div-total', 'div-tax', 'div-largest', 'div-reinvested', 'div-events'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = 'Error';
+        });
+    }
+}
+
+function renderDividends(data: DividendData): void {
+    const currency = data.currency || 'USD';
+    
+    // Update Metrics
+    const fmt = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(val);
+    
+    updateMetricText('div-total', fmt(data.metrics.total_dividends));
+    updateMetricText('div-tax', fmt(data.metrics.total_us_tax));
+    updateMetricText('div-largest', fmt(data.metrics.largest_dividend));
+    updateMetricText('div-reinvested', data.metrics.reinvested_shares.toFixed(4));
+    updateMetricText('div-events', data.metrics.payout_events.toString());
+    
+    const largestTickerEl = document.getElementById('div-largest-ticker');
+    if (largestTickerEl) largestTickerEl.textContent = data.metrics.largest_ticker;
+    
+    // Update Log Table
+    const tbody = document.getElementById('dividend-log-body');
+    if (tbody) {
+        tbody.innerHTML = '';
+        if (data.log.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-2 text-center text-gray-500">No dividend history</td></tr>';
+        } else {
+            data.log.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600';
+                tr.innerHTML = `
+                    <td class="px-4 py-2 font-medium text-gray-900 dark:text-white whitespace-nowrap">${row.date}</td>
+                    <td class="px-4 py-2 text-blue-600 dark:text-blue-400 font-bold">${row.ticker}</td>
+                    <td class="px-4 py-2">
+                        <span class="px-2 py-0.5 rounded text-xs font-medium ${row.type === 'DRIP' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}">
+                            ${row.type}
+                        </span>
+                    </td>
+                    <td class="px-4 py-2 text-right font-medium text-green-600 dark:text-green-400">${fmt(row.amount)}</td>
+                    <td class="px-4 py-2 text-right text-gray-500">${fmt(row.tax)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    }
+}
+
+function updateMetricText(id: string, text: string): void {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+}
+
+async function fetchCurrencyChart(): Promise<void> {
+    showSpinner('currency-chart-spinner');
+    
+    // Theme logic (same as other charts)
+    const htmlElement = document.documentElement;
+    const dataTheme = htmlElement.getAttribute('data-theme') || 'system';
+    let theme: string = 'light';
+    if (dataTheme === 'dark' || dataTheme === 'light' || dataTheme === 'midnight-tokyo' || dataTheme === 'abyss') {
+        theme = dataTheme;
+    } else if (dataTheme === 'system') {
+        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+        const isDark = bodyBg && (bodyBg.includes('rgb(31, 41, 55)') || bodyBg.includes('rgb(17, 24, 39)') || bodyBg.includes('rgb(55, 65, 81)'));
+        theme = isDark ? 'dark' : 'light';
+    }
+
+    const url = `/api/dashboard/charts/currency?fund=${encodeURIComponent(state.currentFund)}&theme=${encodeURIComponent(theme)}`;
+    console.log('[Dashboard] Fetching currency chart...', { url });
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const data: AllocationChartData = await response.json();
+        renderCurrencyChart(data);
+    } catch (error) {
+        console.error('[Dashboard] Error fetching currency chart:', error);
+        const chartEl = document.getElementById('currency-chart');
+        if (chartEl) chartEl.innerHTML = '<div class="text-center text-gray-500 py-8"><p>Error loading chart</p></div>';
+    } finally {
+        hideSpinner('currency-chart-spinner');
+    }
+}
+
+function renderCurrencyChart(data: AllocationChartData): void {
+    const chartEl = document.getElementById('currency-chart');
+    if (!chartEl) return;
+    
+    const Plotly = (window as any).Plotly;
+    if (!Plotly) return;
+
+    const layout = { ...data.layout };
+    const containerHeight = chartEl.offsetHeight || 350;
+    layout.height = containerHeight;
+    layout.autosize = true;
+    layout.margin = { l: 20, r: 20, t: 30, b: 20 };
+
+    try {
+        Plotly.newPlot('currency-chart', data.data, layout, {
+            responsive: true,
+            displayModeBar: false
+        });
+        
+        // Add resize handler
+        if (!(window as any).__currencyChartResizeHandler) {
+            const resizeHandler = () => {
+                if (document.getElementById('currency-chart')) {
+                    Plotly.Plots.resize('currency-chart');
+                }
+            };
+            (window as any).__currencyChartResizeHandler = resizeHandler;
+            window.addEventListener('resize', resizeHandler);
+        }
+    } catch (error) {
+        console.error('[Dashboard] Error rendering currency chart:', error);
     }
 }
 

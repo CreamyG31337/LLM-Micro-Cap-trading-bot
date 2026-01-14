@@ -9,6 +9,8 @@ import json
 from auth import require_auth
 from flask_auth_utils import get_user_email_flask
 from user_preferences import get_user_theme, get_user_currency, get_user_selected_fund, get_user_preference
+from flask_data_utils import fetch_dividend_log_flask
+from chart_utils import create_currency_exposure_chart
 from streamlit_utils import (
     get_current_positions,
     get_trade_log,
@@ -189,6 +191,36 @@ def get_dashboard_summary():
         thesis = get_fund_thesis_data(fund) if fund else None
         logger.debug(f"[Dashboard API] Thesis data: {'found' if thesis else 'not found'}")
         
+        # Investor & Holdings Count
+        investor_count = get_investor_count(fund)
+        holdings_count = len(positions_df) if not positions_df.empty else 0
+        
+        # Calculate Exchange Rates for Display
+        # fetch_latest_rates_bulk returns rate FROM key TO display_currency
+        # If display_currency is CAD:
+        # USD -> CAD rate is in rate_map['USD'] (e.g. 1.40)
+        # CAD -> USD rate is 1 / rate_map['USD'] (e.g. 0.71)
+        # If display_currency is USD:
+        # CAD -> USD rate is in rate_map['CAD'] (e.g. 0.71)
+        # USD -> CAD rate is 1 / rate_map['CAD'] (e.g. 1.40)
+        
+        usd_cad_rate = 1.0
+        cad_usd_rate = 1.0
+        
+        if display_currency == 'CAD':
+            usd_cad_rate = rate_map.get('USD', 1.0)
+            if usd_cad_rate > 0:
+                cad_usd_rate = 1.0 / usd_cad_rate
+        elif display_currency == 'USD':
+            cad_usd_rate = rate_map.get('CAD', 1.0)
+            if cad_usd_rate > 0:
+                usd_cad_rate = 1.0 / cad_usd_rate
+        
+        exchange_rates = {
+            "USD_CAD": usd_cad_rate,
+            "CAD_USD": cad_usd_rate
+        }
+        
         processing_time = time.time() - start_time
         response = {
             "total_value": total_value,
@@ -199,6 +231,9 @@ def get_dashboard_summary():
             "unrealized_pnl_pct": unrealized_pnl_pct,
             "display_currency": display_currency,
             "thesis": thesis,
+            "investor_count": investor_count,
+            "holdings_count": holdings_count,
+            "exchange_rates": exchange_rates,
             "from_cache": False,
             "processing_time": processing_time
         }
@@ -795,6 +830,131 @@ def get_recent_activity():
         processing_time = time.time() - start_time
         logger.error(f"[Dashboard API] Error fetching activity (took {processing_time:.3f}s): {e}", exc_info=True)
         return jsonify({"error": str(e), "processing_time": processing_time}), 500
+
+@dashboard_bp.route('/api/dashboard/dividends', methods=['GET'])
+@require_auth
+def get_dividend_data():
+    """Get dividend metrics and log.
+    
+    Returns:
+        JSON with metrics (total LTM, tax, etc.) and list of dividend events.
+    """
+    fund = request.args.get('fund')
+    if not fund or fund.lower() == 'all':
+        fund = None
+        
+    display_currency = get_user_currency() or 'CAD'
+    
+    try:
+        # Fetch dividend data (last 365 days for LTM metrics)
+        dividends_df = fetch_dividend_log_flask(days_lookback=365, fund=fund)
+        
+        if dividends_df.empty:
+            return jsonify({
+                "metrics": {
+                    "total_dividends": 0.0,
+                    "total_us_tax": 0.0,
+                    "largest_dividend": 0.0,
+                    "largest_ticker": "N/A",
+                    "reinvested_shares": 0.0,
+                    "payout_events": 0
+                },
+                "log": []
+            })
+            
+        # Calculate Metrics (LTM)
+        total_dividends = dividends_df['amount'].sum()
+        total_us_tax = dividends_df['tax_paid'].sum() if 'tax_paid' in dividends_df.columns else 0.0
+        
+        largest_idx = dividends_df['amount'].idxmax()
+        largest_dividend = dividends_df.loc[largest_idx, 'amount']
+        largest_ticker = dividends_df.loc[largest_idx, 'ticker']
+        
+        # Calculate Reinvested Shares (DRIP)
+        # Assuming 'shares' column exists and transaction_type is 'DRIP' or similar
+        # If no explicit type, check if shares > 0
+        total_reinvested = 0.0
+        if 'shares' in dividends_df.columns:
+            total_reinvested = dividends_df['shares'].sum()
+            
+        payout_events = len(dividends_df)
+        
+        # Prepare Log (for table)
+        # Sort by date desc
+        dividends_df = dividends_df.sort_values('date', ascending=False)
+        
+        log_data = []
+        for _, row in dividends_df.iterrows():
+            log_data.append({
+                "date": row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date']),
+                "ticker": row.get('ticker', ''),
+                "amount": row.get('amount', 0.0),
+                "tax": row.get('tax_paid', 0.0),
+                "shares": row.get('shares', 0.0),
+                "type": "DRIP" if row.get('shares', 0) > 0 else "CASH"
+            })
+            
+        return jsonify({
+            "metrics": {
+                "total_dividends": total_dividends,
+                "total_us_tax": total_us_tax,
+                "largest_dividend": largest_dividend,
+                "largest_ticker": largest_ticker,
+                "reinvested_shares": total_reinvested,
+                "payout_events": payout_events
+            },
+            "log": log_data,
+            "currency": display_currency
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching dividend data: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@dashboard_bp.route('/api/dashboard/charts/currency', methods=['GET'])
+def get_currency_chart():
+    """Get currency exposure chart as Plotly JSON."""
+    fund = request.args.get('fund')
+    if not fund or fund.lower() == 'all':
+        fund = None
+        
+    theme = request.args.get('theme', 'light')
+    
+    try:
+        positions_df = get_current_positions(fund)
+        cash_balances = get_cash_balances(fund)
+        
+        # Create chart using shared utility
+        # Note: create_currency_exposure_chart takes positions_df and cash_balances
+        # We need to make sure we're using the right version or args
+        # Streamlit version: create_currency_exposure_chart(positions_df, cash_balances)
+        from chart_utils import create_currency_exposure_chart, get_chart_theme_config
+        from plotly_utils import serialize_plotly_figure
+        
+        fig = create_currency_exposure_chart(positions_df, cash_balances)
+        
+        if not fig:
+             return jsonify({"error": "Could not create chart"}), 500
+             
+        # Update height
+        fig.update_layout(height=350, margin=dict(l=20, r=20, t=30, b=20))
+        
+        # Apply theme
+        chart_json = serialize_plotly_figure(fig)
+        chart_data = json.loads(chart_json)
+        theme_config = get_chart_theme_config(theme)
+        
+        if 'layout' in chart_data:
+            chart_data['layout']['template'] = theme_config['template']
+            chart_data['layout']['paper_bgcolor'] = theme_config['paper_bgcolor']
+            chart_data['layout']['plot_bgcolor'] = theme_config['plot_bgcolor']
+            chart_data['layout']['font'] = {'color': theme_config['font_color']}
+            
+        return Response(json.dumps(chart_data), mimetype='application/json')
+        
+    except Exception as e:
+        logger.error(f"Error creating currency chart: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 @dashboard_bp.route('/api/dashboard/movers', methods=['GET'])
 @require_auth
